@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pong - Gra żyroskopowa</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+</head>
+<body>
+    <div id="gameContainer">
+        <div id="qrScreen" class="screen active">
+            <h2>Zeskanuj kod QR swoim telefonem</h2>
+            <p class="instruction">Każdy gracz powinien zeskanować odpowiedni kod QR swoim telefonem</p>
+            <div id="qrContainer">
+                <div class="qr-section">
+                    <h3>Gracz 1 (Lewa paletka)</h3>
+                    <canvas id="qrPlayer1"></canvas>
+                    <div class="player-status" id="status1">Oczekiwanie...</div>
+                </div>
+                <div class="qr-section">
+                    <h3>Gracz 2 (Prawa paletka)</h3>
+                    <canvas id="qrPlayer2"></canvas>
+                    <div class="player-status" id="status2">Oczekiwanie...</div>
+                </div>
+            </div>
+        </div>
+
+        <div id="controllerScreen" class="screen">
+            <h2 id="controllerTitle">Kontroler - Gracz X</h2>
+            <div id="controllerInfo">
+                <p>Telefon jest teraz kontrolerem!</p>
+                <div id="gyroStatus">Inicjalizacja żyroskopu...</div>
+                <div id="tiltDisplay">Pochylenie: 0</div>
+            </div>
+            <div id="controllerInstructions">
+                <p>📱 Pochyl telefon w górę/dół aby sterować paletką</p>
+                <p>🎮 Poczekaj aż drugi gracz dołączy</p>
+            </div>
+        </div>
+
+        <div id="gameScreen" class="screen">
+            <div id="scoreBoard">
+                <span id="player1Score">0</span>
+                <span id="player2Score">0</span>
+            </div>
+            <canvas id="gameCanvas" width="800" height="400"></canvas>
+            <div id="gameControls">
+                <button id="pauseBtn">Pauza</button>
+                <button id="backToMenuBtn">Menu główne</button>
+            </div>
+        </div>
+
+        <div id="gameOverScreen" class="screen">
+            <h2 id="winnerText"></h2>
+            <div id="finalScore">
+                <p>Gracz 1: <span id="finalPlayer1Score"></span></p>
+                <p>Gracz 2: <span id="finalPlayer2Score"></span></p>
+            </div>
+            <button id="playAgainBtn">Zagraj ponownie</button>
+            <button id="backToMenuBtn2">Menu główne</button>
+        </div>
+    </div>
+
+    <!-- Ładowanie skryptów JavaScript -->
+    <script src="gyroscope.js"></script>
+    <script src="communication.js"></script>
+    <script src="game.js"></script>
+    <script src="main.js"></script>
+</body>
+</html>
