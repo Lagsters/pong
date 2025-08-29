@@ -304,14 +304,7 @@ class GameCommunication {
 
             // Krótkie opóźnienie żeby użytkownik zobaczył status "Połączony!"
             setTimeout(() => {
-                showScreen('gameScreen');
-                if (window.game) {
-                    window.game.start();
-                } else {
-                    // Inicjalizuj grę jeśli jeszcze nie istnieje
-                    window.game = new PongGame();
-                    window.game.start();
-                }
+                this.showCountdown();
             }, 1500); // 1.5 sekundy opóźnienia
         }
 
@@ -522,6 +515,73 @@ class GameCommunication {
         // Wyczyść localStorage
         localStorage.removeItem('playerConnect');
         localStorage.removeItem('playerData');
+    }
+
+    // NOWA FUNKCJA - ODLICZANIE PRZED STARTEM GRY
+    showCountdown() {
+        console.log('🎬 Rozpoczynam odliczanie przed grą!');
+
+        // Przejdź do ekranu gry ale nie uruchamiaj jeszcze gry
+        showScreen('gameScreen');
+
+        // Inicjalizuj canvas i grę (ale nie startuj)
+        const canvas = document.getElementById('gameCanvas');
+        const containerWidth = Math.min(window.innerWidth * 0.9, 800);
+        const containerHeight = Math.min(window.innerHeight * 0.6, 400);
+
+        canvas.width = containerWidth;
+        canvas.height = containerHeight;
+        canvas.style.width = containerWidth + 'px';
+        canvas.style.height = containerHeight + 'px';
+
+        // Twórz nową instancję gry ale nie startuj jeszcze
+        window.game = new PongGame(canvas);
+        window.game.reset(); // Reset wyników
+
+        // Pokaż odliczanie na canvas
+        this.displayCountdownMessage(canvas, 'READY', () => {
+            setTimeout(() => {
+                this.displayCountdownMessage(canvas, 'STEADY', () => {
+                    setTimeout(() => {
+                        this.displayCountdownMessage(canvas, 'GO!', () => {
+                            setTimeout(() => {
+                                // Teraz uruchom grę!
+                                window.game.start();
+                                console.log('🎮 Gra rozpoczęta!');
+                            }, 500);
+                        });
+                    }, 1000);
+                });
+            }, 1000);
+        });
+    }
+
+    displayCountdownMessage(canvas, message, callback) {
+        const ctx = canvas.getContext('2d');
+
+        // Wyczyść canvas
+        ctx.fillStyle = '#000000';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Narysuj wiadomość
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = 'bold 48px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        // Dodaj efekt świecenia
+        ctx.shadowColor = '#FFD700';
+        ctx.shadowBlur = 20;
+
+        ctx.fillText(message, canvas.width / 2, canvas.height / 2);
+
+        // Usuń efekt świecenia dla innych elementów
+        ctx.shadowBlur = 0;
+
+        // Wywołaj callback po krótkim czasie
+        if (callback) {
+            setTimeout(callback, 200);
+        }
     }
 }
 
