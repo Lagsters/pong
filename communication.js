@@ -373,6 +373,15 @@ class GameCommunication {
         console.log(`🚀 INICJALIZACJA KONTROLERA - Gracz ${this.playerId}`);
         console.log(`🌐 Host URL: ${this.hostUrl}`);
 
+        // AKTYWUJ BLOKADĘ WYGASZANIA EKRANU na samym początku
+        console.log('🔆 Aktywuję blokadę wygaszania ekranu...');
+        try {
+            await screenWakeLock.activate();
+            console.log('✅ Blokada wygaszania ekranu aktywna');
+        } catch (error) {
+            console.warn('⚠️ Nie udało się aktywować blokady wygaszania:', error);
+        }
+
         // Pokaż ekran kontrolera
         showScreen('controllerScreen');
         document.getElementById('controllerTitle').textContent = `Kontroler - Gracz ${this.playerId}`;
@@ -607,6 +616,10 @@ class GameCommunication {
     disconnect() {
         if (this.isController) {
             gyroscope.stopListening();
+
+            // DEZAKTYWUJ BLOKADĘ WYGASZANIA EKRANU
+            console.log('🌙 Dezaktywuję blokadę wygaszania ekranu...');
+            screenWakeLock.deactivate();
         }
 
         // Wyczyść localStorage
