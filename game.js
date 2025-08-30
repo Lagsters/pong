@@ -121,25 +121,39 @@ class PongGame {
         let player2Tilt = 0;
 
         if (window.gameComm && window.gameComm.isHost) {
-            player1Tilt = window.gameComm.playerData.player1.tilt;
-            player2Tilt = window.gameComm.playerData.player2.tilt;
+            player1Tilt = window.gameComm.playerData.player1.tilt || 0;
+            player2Tilt = window.gameComm.playerData.player2.tilt || 0;
+
+            // Debug - loguj dane co sekundę podczas gry
+            if (!this.lastPaddleLogTime || Date.now() - this.lastPaddleLogTime > 1000) {
+                console.log('🎮 Dane paletek:', {
+                    isHost: window.gameComm.isHost,
+                    player1Tilt: player1Tilt,
+                    player2Tilt: player2Tilt,
+                    playerData: window.gameComm.playerData
+                });
+                this.lastPaddleLogTime = Date.now();
+            }
         } else {
             // Fallback dla starego systemu (jeśli ktoś używa bez QR)
-            player1Tilt = this.player1Tilt;
-            player2Tilt = this.player2Tilt;
+            player1Tilt = this.player1Tilt || 0;
+            player2Tilt = this.player2Tilt || 0;
         }
 
-        // Gracz 1 (lewa paletka)
-        const player1Movement = player1Tilt * this.player1Paddle.speed;
+        // Zwiększona czułość ruchu - paletki poruszają się szybciej w odpowiedzi na pochylenie
+        const sensitivity = 12; // Zwiększono z 8 do 12 dla lepszej responsywności
+
+        // Gracz 1 (lewa paletka) - odwrócony kierunek dla intuicyjnego sterowania
+        const player1Movement = -player1Tilt * sensitivity;
         this.player1Paddle.y += player1Movement;
 
-        // Gracz 2 (prawa paletka)
-        const player2Movement = player2Tilt * this.player2Paddle.speed;
+        // Gracz 2 (prawa paletka) - odwrócony kierunek dla intuicyjnego sterowania
+        const player2Movement = -player2Tilt * sensitivity;
         this.player2Paddle.y += player2Movement;
 
-        // Ograniczenie paletek do obszaru gry
-        this.player1Paddle.y = Math.max(0, Math.min(this.height - this.paddleHeight, this.player1Paddle.y));
-        this.player2Paddle.y = Math.max(0, Math.min(this.height - this.paddleHeight, this.player2Paddle.y));
+        // Ograniczenie paletek do obszaru gry z marginesem bezpieczeństwa
+        this.player1Paddle.y = Math.max(5, Math.min(this.height - this.paddleHeight - 5, this.player1Paddle.y));
+        this.player2Paddle.y = Math.max(5, Math.min(this.height - this.paddleHeight - 5, this.player2Paddle.y));
     }
 
     updateBall() {

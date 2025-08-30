@@ -44,7 +44,11 @@ class GameCommunication {
             console.log('🎯 Ustawiono isController:', this.isController);
             console.log('👤 Ustawiono playerId:', this.playerId);
             console.log('🌐 Ustawiono hostUrl:', this.hostUrl);
-            this.initController();
+
+            // Opóźnienie aby DOM był gotowy + wielokrotne próby połączenia
+            setTimeout(() => {
+                this.initController();
+            }, 500);
         } else {
             console.log('❌ BRAK PARAMETRÓW - to nie jest kontroler');
             console.log('❓ player:', player);
@@ -63,9 +67,15 @@ class GameCommunication {
 
     async initHost() {
         this.isHost = true;
+        this.startTime = Date.now(); // Dodaj timestamp startu dla debugowania
 
-        // Rozpocznij nasłuchiwanie na połączenia (symulacja przez localStorage)
+        console.log('🏠 INICJALIZACJA HOSTA - START');
+        console.log('🔄 isHost ustawione na:', this.isHost);
+
+        // Rozpocznij nasłuchiwanie na połączenia NATYCHMIAST
         this.startHostListening();
+
+        console.log('👂 Host nasłuchuje na połączenia graczy...');
 
         // Generuj kody QR z opóźnieniem, aby elementy DOM były gotowe
         setTimeout(async () => {
@@ -226,11 +236,24 @@ class GameCommunication {
     }
 
     startHostListening() {
-        // Dla hosta - pobieraj dane z serwera co 100ms
+        console.log('🎯 STARTOWANIE NASŁUCHIWANIA HOSTA');
+
+        // Dla hosta - pobieraj dane z serwera CZĘŚCIEJ na początku
         if (this.isHost) {
-            setInterval(() => {
+            // Pierwsze 10 sekund sprawdzaj co 50ms dla szybkiego wykrywania
+            const fastInterval = setInterval(() => {
                 this.fetchGameData();
-            }, 100);
+            }, 50);
+
+            // Po 10 sekundach przełącz na normalny interwał
+            setTimeout(() => {
+                clearInterval(fastInterval);
+                setInterval(() => {
+                    this.fetchGameData();
+                }, 100);
+            }, 10000);
+
+            console.log('⚡ Ustawiono szybkie nasłuchiwanie na pierwsze 10 sekund');
         }
 
         // Nasłuchuj na zmiany w localStorage (fallback)
@@ -244,10 +267,17 @@ class GameCommunication {
             }
         });
 
-        // Sprawdzaj localStorage jako fallback
-        setInterval(() => {
+        // Sprawdzaj localStorage jako fallback - również częściej na początku
+        const fastLocalCheck = setInterval(() => {
             this.checkPlayerUpdates();
-        }, 100);
+        }, 50);
+
+        setTimeout(() => {
+            clearInterval(fastLocalCheck);
+            setInterval(() => {
+                this.checkPlayerUpdates();
+            }, 100);
+        }, 10000);
     }
 
     handlePlayerConnect(playerId) {
@@ -381,17 +411,58 @@ class GameCommunication {
     }
 
     startSendingData() {
-        gyroscope.onOrientationChange((orientation, tilt) => {
-            // Aktualizuj wyświetlanie
-            document.getElementById('tiltDisplay').textContent = `Pochylenie: ${(tilt * 100).toFixed(0)}%`;
+        console.log('🔄 ROZPOCZYNAM WYSYŁANIE DANYCH ŻYROSKOPU');
 
-            // Wyślij dane do hosta
+        // Zwiększona częstotliwość wysyłania danych dla płynniejszego sterowania
+        let lastSentTime = 0;
+        const sendInterval = 50; // 50ms = 20 razy na sekundę
+
+        gyroscope.onOrientationChange((orientation, tilt) => {
+            const now = Date.now();
+
+            // Ograniczenie częstotliwości wysyłania aby nie przeciążać serwera
+            if (now - lastSentTime < sendInterval) {
+                return;
+            }
+            lastSentTime = now;
+
+            // Debug - loguj wysyłane dane
+            if (!this.lastSendLogTime || Date.now() - this.lastSendLogTime > 1000) {
+                console.log('📡 Wysyłam dane żyroskopu:', {
+                    playerId: this.playerId,
+                    tilt: tilt,
+                    orientation: orientation
+                });
+                this.lastSendLogTime = Date.now();
+            }
+
+            // Aktualizuj wyświetlanie z lepszą precyzją
+            const tiltDisplay = document.getElementById('tiltDisplay');
+            if (tiltDisplay) {
+                tiltDisplay.textContent = `Pochylenie: ${(tilt * 100).toFixed(1)}%`;
+            }
+
+            // Dodaj wizualny wskaźnik ruchu
+            const indicator = document.getElementById('movementIndicator');
+            if (indicator) {
+                const movement = Math.abs(tilt * 100);
+                indicator.style.width = `${Math.min(100, movement * 2)}%`;
+                indicator.style.backgroundColor = movement > 20 ? '#28a745' : '#ffc107';
+            }
+
+            // Wyślij dane do hosta z większą precyzją
             this.sendToHost('playerData', {
                 playerId: this.playerId,
-                tilt: tilt,
-                timestamp: Date.now()
+                tilt: parseFloat(tilt.toFixed(3)), // Większa precyzja
+                orientation: {
+                    beta: parseFloat(orientation.beta.toFixed(1)),
+                    gamma: parseFloat(orientation.gamma.toFixed(1))
+                },
+                timestamp: now
             });
         });
+
+        console.log('✅ Callback żyroskopu został zarejestrowany');
     }
 
     sendToHost(type, data) {
@@ -417,41 +488,60 @@ class GameCommunication {
     }
 
     async sendHTTPRequest(payload) {
-        console.log(`🔄 PRÓBA WYSŁANIA HTTP:`, payload);
+        const maxRetries = 3;
+        let retryCount = 0;
+
+        console.log(`🔄 PRÓBA WYSŁANIA HTTP (${retryCount + 1}/${maxRetries}):`, payload);
         console.log(`🎯 URL docelowy: ${this.hostUrl}/controller-data`);
 
-        try {
-            // Wyślij dane do hosta przez fetch
-            const hostUrl = this.hostUrl || window.location.origin;
-            console.log(`📤 Wysyłam fetch do: ${hostUrl}/controller-data`);
+        while (retryCount < maxRetries) {
+            try {
+                // Wyślij dane do hosta przez fetch
+                const hostUrl = this.hostUrl || window.location.origin;
+                console.log(`📤 Wysyłam fetch do: ${hostUrl}/controller-data (próba ${retryCount + 1})`);
 
-            const response = await fetch(`${hostUrl}/controller-data`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(payload)
-            });
+                const response = await fetch(`${hostUrl}/controller-data`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(payload),
+                    timeout: 5000 // 5 sekund timeout
+                });
 
-            console.log(`📨 Odpowiedź serwera - status: ${response.status}`);
+                console.log(`📨 Odpowiedź serwera - status: ${response.status}`);
 
-            if (response.ok) {
-                console.log('✅ Dane wysłane do hosta pomyślnie:', payload);
-            } else {
-                console.error(`❌ Błąd HTTP ${response.status}:`, await response.text());
+                if (response.ok) {
+                    console.log('✅ Dane wysłane do hosta pomyślnie:', payload);
+                    return; // Sukces - wyjdź z pętli
+                } else {
+                    console.error(`❌ Błąd HTTP ${response.status}:`, await response.text());
+                    retryCount++;
+
+                    if (retryCount < maxRetries) {
+                        console.log(`🔄 Ponawiam próbę za 1 sekundę... (${retryCount}/${maxRetries})`);
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                    }
+                }
+
+            } catch (error) {
+                console.error(`❌ Błąd wysyłania danych (próba ${retryCount + 1}):`, error);
+                retryCount++;
+
+                if (retryCount < maxRetries) {
+                    console.log(`🔄 Ponawiam próbę za 1 sekundę... (${retryCount}/${maxRetries})`);
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                }
             }
+        }
 
-        } catch (error) {
-            console.error('❌ Błąd wysyłania danych do hosta:', error);
-
-            // Fallback - spróbuj localStorage jeśli HTTP nie działa
-            console.log('🔄 Próba fallback przez localStorage...');
-            if (payload.type === 'playerConnect') {
-                localStorage.setItem('playerConnect', JSON.stringify(payload.data));
-                console.log('💾 Zapisano playerConnect w localStorage');
-            } else if (payload.type === 'playerData') {
-                localStorage.setItem('playerData', JSON.stringify(payload.data));
-            }
+        // Jeśli wszystkie próby zawiodły, użyj fallback localStorage
+        console.log('🔄 Wszystkie próby HTTP zawiodły, próba fallback przez localStorage...');
+        if (payload.type === 'playerConnect') {
+            localStorage.setItem('playerConnect', JSON.stringify(payload.data));
+            console.log('💾 Zapisano playerConnect w localStorage');
+        } else if (payload.type === 'playerData') {
+            localStorage.setItem('playerData', JSON.stringify(payload.data));
         }
     }
 
@@ -464,8 +554,16 @@ class GameCommunication {
             if (response.ok) {
                 const gameData = await response.json();
 
-                // Loguj tylko przy pierwszym połączeniu lub zmianie stanu
-                let shouldLog = false;
+                // Debug - loguj zawsze pierwsze 5 sekund, potem tylko przy zmianach
+                const shouldDebug = Date.now() - (this.startTime || Date.now()) < 5000;
+
+                if (shouldDebug) {
+                    console.log('🔄 Pobrane dane z serwera:', gameData);
+                    console.log('🏠 Current host state:', {
+                        isHost: this.isHost,
+                        connectedPlayers: this.connectedPlayers
+                    });
+                }
 
                 // Aktualizuj stan połączonych graczy
                 Object.keys(gameData.connectedPlayers).forEach(playerKey => {
@@ -474,7 +572,6 @@ class GameCommunication {
                     const isConnected = gameData.connectedPlayers[playerKey];
 
                     if (!wasConnected && isConnected) {
-                        shouldLog = true;
                         console.log('🔄 Pobrane dane z serwera:', gameData);
                         console.log(`🔍 Gracz ${playerId}: was=${wasConnected}, is=${isConnected}`);
                         console.log(`🎉 NOWE POŁĄCZENIE - Gracz ${playerId}!`);

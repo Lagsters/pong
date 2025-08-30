@@ -1,1 +1,1 @@
-{"connectedPlayers": {"player1": true, "player2": true}, "playerData": {"player1": {"tilt": 0, "timestamp": 0}, "player2": {"tilt": 0, "timestamp": 0}}, "playerIPs": {"player1": "192.168.100.140", "player2": "192.168.100.143"}}
+{"connectedPlayers": {"player1": true, "player2": true}, "playerData": {"player1": {"tilt": 0, "timestamp": 0}, "player2": {"tilt": 0, "timestamp": 0}}, "playerIPs": {}}

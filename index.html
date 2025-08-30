@@ -31,11 +31,20 @@
             <div id="controllerInfo">
                 <p>Telefon jest teraz kontrolerem!</p>
                 <div id="gyroStatus">Inicjalizacja żyroskopu...</div>
-                <div id="tiltDisplay">Pochylenie: 0</div>
+                <div id="tiltDisplay">Pochylenie: 0%</div>
+
+                <!-- Wizualny wskaźnik ruchu -->
+                <div class="movement-indicator-container">
+                    <label>Aktywność ruchu:</label>
+                    <div class="movement-indicator-bar">
+                        <div id="movementIndicator" class="movement-indicator"></div>
+                    </div>
+                </div>
             </div>
             <div id="controllerInstructions">
                 <p>📱 Pochyl telefon w górę/dół aby sterować paletką</p>
                 <p>🎮 Poczekaj aż drugi gracz dołączy</p>
+                <p>🔄 Trzymaj telefon pionowo i poruszaj nim płynnie</p>
             </div>
         </div>
 

@@ -45,16 +45,34 @@ class GyroscopeController {
             throw new Error('Żyroskop nie jest dostępny');
         }
 
-        window.addEventListener('deviceorientation', (event) => {
+        // Zapisz referencję do funkcji obsługi dla późniejszego usunięcia
+        this.orientationHandler = (event) => {
             this.orientation.beta = event.beta || 0;  // Obrót w przód/tył (-180 do 180)
             this.orientation.gamma = event.gamma || 0; // Obrót w lewo/prawo (-90 do 90)
 
+            // Debug - loguj pierwsze 5 sekund
+            if (!this.lastLogTime || Date.now() - this.lastLogTime > 1000) {
+                console.log('🔄 Dane żyroskopu:', {
+                    beta: this.orientation.beta.toFixed(1),
+                    gamma: this.orientation.gamma.toFixed(1),
+                    tilt: this.getVerticalTilt().toFixed(3)
+                });
+                this.lastLogTime = Date.now();
+            }
+
             this.notifyCallbacks();
-        });
+        };
+
+        window.addEventListener('deviceorientation', this.orientationHandler);
+        console.log('👂 Żyroskop rozpoczął nasłuchiwanie zdarzeń deviceorientation');
     }
 
     stopListening() {
-        window.removeEventListener('deviceorientation', this.handleOrientation);
+        if (this.orientationHandler) {
+            window.removeEventListener('deviceorientation', this.orientationHandler);
+            this.orientationHandler = null;
+            console.log('🛑 Żyroskop zatrzymał nasłuchiwanie');
+        }
     }
 
     calibrate() {
@@ -68,7 +86,8 @@ class GyroscopeController {
         }
 
         // Zwraca wartość od -1 do 1 na podstawie pochylenia telefonu
-        const tilt = (this.orientation.beta - this.calibrationOffset) / 45; // 45 stopni = maksymalne pochylenie
+        // Zwiększona czułość dla lepszej responsywności
+        const tilt = (this.orientation.beta - this.calibrationOffset) / 30; // Zmieniono z 45 na 30 stopni dla większej czułości
         return Math.max(-1, Math.min(1, tilt));
     }
 
