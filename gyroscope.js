@@ -76,8 +76,10 @@ class GyroscopeController {
     }
 
     calibrate() {
-        this.calibrationOffset = this.orientation.beta;
+        // Kalibracja dla osi gamma (lewo/prawo)
+        this.calibrationOffset = this.orientation.gamma;
         this.isCalibrated = true;
+        console.log('🎯 Kalibracja żyroskopu dla osi gamma:', this.calibrationOffset.toFixed(1) + '°');
     }
 
     getVerticalTilt() {
@@ -85,9 +87,16 @@ class GyroscopeController {
             return 0;
         }
 
-        // Zwraca wartość od -1 do 1 na podstawie pochylenia telefonu
-        // Zwiększona czułość dla lepszej responsywności
-        const tilt = (this.orientation.beta - this.calibrationOffset) / 30; // Zmieniono z 45 na 30 stopni dla większej czułości
+        // Używamy tylko osi gamma (lewo/prawo) do sterowania paletką
+        // gamma: -90° do +90° (lewo do prawo)
+        // Pochylenie w lewo (ujemne gamma) = paletka na dole (-1)
+        // Pochylenie w prawo (dodatnie gamma) = paletka na górze (+1)
+        const gammaChange = this.orientation.gamma - this.calibrationOffset;
+
+        // Mapuj zakres ±45° na -1 do +1
+        const tilt = gammaChange / 45;
+
+        // Ogranicz do zakresu -1 do +1
         return Math.max(-1, Math.min(1, tilt));
     }
 

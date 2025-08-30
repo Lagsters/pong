@@ -11,7 +11,7 @@ class PongGame {
         // Wynik
         this.player1Score = 0;
         this.player2Score = 0;
-        this.maxScore = 5;
+        this.maxScore = 100;
 
         // Piłka
         this.ball = {
@@ -127,33 +127,40 @@ class PongGame {
             // Debug - loguj dane co sekundę podczas gry
             if (!this.lastPaddleLogTime || Date.now() - this.lastPaddleLogTime > 1000) {
                 console.log('🎮 Dane paletek:', {
-                    isHost: window.gameComm.isHost,
-                    player1Tilt: player1Tilt,
-                    player2Tilt: player2Tilt,
-                    playerData: window.gameComm.playerData
+                    player1Tilt: player1Tilt.toFixed(3),
+                    player2Tilt: player2Tilt.toFixed(3),
+                    player1Y: Math.round(this.player1Paddle.y),
+                    player2Y: Math.round(this.player2Paddle.y)
                 });
                 this.lastPaddleLogTime = Date.now();
             }
         } else {
-            // Fallback dla starego systemu (jeśli ktoś używa bez QR)
+            // Fallback dla starego systemu
             player1Tilt = this.player1Tilt || 0;
             player2Tilt = this.player2Tilt || 0;
         }
 
-        // Zwiększona czułość ruchu - paletki poruszają się szybciej w odpowiedzi na pochylenie
-        const sensitivity = 12; // Zwiększono z 8 do 12 dla lepszej responsywności
+        // NOWY ALGORYTM: Pozycjonowanie proporcjonalne do kąta odchylenia
+        // Dostępna przestrzeń dla paletki (wysokość ekranu minus wysokość paletki)
+        const playableHeight = this.height - this.paddleHeight;
 
-        // Gracz 1 (lewa paletka) - odwrócony kierunek dla intuicyjnego sterowania
-        const player1Movement = -player1Tilt * sensitivity;
-        this.player1Paddle.y += player1Movement;
+        // Środek ekranu dla paletki (gdy telefon pionowo)
+        const centerY = playableHeight / 2;
 
-        // Gracz 2 (prawa paletka) - odwrócony kierunek dla intuicyjnego sterowania
-        const player2Movement = -player2Tilt * sensitivity;
-        this.player2Paddle.y += player2Movement;
+        // Konwersja tilt (-1 do +1) na pozycję paletki
+        // tilt = -1 (pochylenie w lewo) -> paletka na dole (y = playableHeight)
+        // tilt = 0 (telefon pionowo) -> paletka w środku (y = centerY)
+        // tilt = +1 (pochylenie w prawo) -> paletka na górze (y = 0)
 
-        // Ograniczenie paletek do obszaru gry z marginesem bezpieczeństwa
-        this.player1Paddle.y = Math.max(5, Math.min(this.height - this.paddleHeight - 5, this.player1Paddle.y));
-        this.player2Paddle.y = Math.max(5, Math.min(this.height - this.paddleHeight - 5, this.player2Paddle.y));
+        // Gracz 1 (lewa paletka)
+        this.player1Paddle.y = centerY - (player1Tilt * centerY);
+
+        // Gracz 2 (prawa paletka)
+        this.player2Paddle.y = centerY - (player2Tilt * centerY);
+
+        // Ograniczenie do granic ekranu (dodatkowe zabezpieczenie)
+        this.player1Paddle.y = Math.max(0, Math.min(playableHeight, this.player1Paddle.y));
+        this.player2Paddle.y = Math.max(0, Math.min(playableHeight, this.player2Paddle.y));
     }
 
     updateBall() {
