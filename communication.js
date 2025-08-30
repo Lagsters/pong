@@ -59,8 +59,8 @@ class GameCommunication {
     generateControllerUrl(playerId) {
         // Użyj lokalnego IP zamiast localhost/0.0.0.0
         const localIP = '192.168.100.2';
-        const port = '8000'; // Zmienione z 8001 na 8000
-        const protocol = window.location.protocol;
+        const port = '8000';
+        const protocol = 'https:'; // Wymuś HTTPS dla czujników
         const currentUrl = `${protocol}//${localIP}:${port}${window.location.pathname}`;
         return `${currentUrl}?player=${playerId}&host=${encodeURIComponent(currentUrl)}`;
     }

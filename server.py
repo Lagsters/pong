@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import http.server
 import socketserver
+import ssl
 import json
 import os
 import urllib.parse
@@ -342,7 +343,7 @@ if __name__ == "__main__":
         print("✅ Utworzono czysty plik game_data.json")
 
         print(f"Uruchamiam nowy serwer Pong na porcie {PORT}")
-        print(f"Otwórz http://192.168.100.2:{PORT} w przeglądarce")
+        print(f"Otwórz https://192.168.100.2:{PORT} w przeglądarce")
         print("=" * 60)
         print("LOGOWANIE AKTYWNE - będziesz widzieć kiedy telefon skanuje QR!")
         print("=" * 60)
@@ -350,6 +351,11 @@ if __name__ == "__main__":
 
         # Utwórz serwer z opcją ponownego użycia adresu
         with ReusableTCPServer(("", PORT), PongGameHandler) as httpd:
+            # Skonfiguruj HTTPS z nowszym API
+            ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            ssl_context.load_cert_chain("server.crt", "server.key")
+            httpd.socket = ssl_context.wrap_socket(httpd.socket, server_side=True)
+            print(f"🔒 Serwer HTTPS uruchomiony - czujniki będą działać!")
             httpd.serve_forever()
 
     except Exception as e:
@@ -363,8 +369,12 @@ if __name__ == "__main__":
         try:
             print(f"Ponowna próba uruchomienia na porcie {PORT}")
             with ReusableTCPServer(("", PORT), PongGameHandler) as httpd:
-                print(f"✅ Serwer pomyślnie uruchomiony na porcie {PORT}")
-                print(f"🌐 Otwórz http://192.168.100.2:{PORT} w przeglądarce")
+                # Skonfiguruj HTTPS z nowszym API
+                ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+                ssl_context.load_cert_chain("server.crt", "server.key")
+                httpd.socket = ssl_context.wrap_socket(httpd.socket, server_side=True)
+                print(f"✅ Serwer HTTPS pomyślnie uruchomiony na porcie {PORT}")
+                print(f"🌐 Otwórz https://192.168.100.2:{PORT} w przeglądarce")
                 print("🎮 Gotowy do skanowania kodów QR!")
                 httpd.serve_forever()
         except Exception as e2:
