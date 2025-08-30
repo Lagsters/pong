@@ -19,14 +19,14 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     console.log('DOMContentLoaded - sprawdzanie parametrów URL:', { player, host });
 
-    if (player && host) {
-        console.log('Wykryto parametry kontrolera, inicjalizacja...');
+    if (player) {
+        console.log('Wykryto parametr kontrolera, inicjalizacja...');
 
         // Upewnij się, że gameComm jest kontrolerem
         if (!gameComm.isController) {
             gameComm.isController = true;
             gameComm.playerId = player;
-            gameComm.hostUrl = decodeURIComponent(host);
+            gameComm.hostUrl = host ? decodeURIComponent(host) : null;
             await gameComm.initController();
         }
         return; // Kontroler ma własną inicjalizację
