@@ -13,6 +13,8 @@ class GameCommunication {
         this.ws = null;
         this.connectedPlayers = { player1: false, player2: false };
         this.playerData = { player1: { tilt: 0 }, player2: { tilt: 0 } };
+        this.p2pEnabled = true; // Włączenie funkcji P2P
+        this.p2pConnected = false; // Status połączenia P2P
 
         console.log('🔍 Sprawdzam parametry URL...');
         console.log('📍 window.location.href:', window.location.href);
@@ -451,6 +453,11 @@ class GameCommunication {
         if (ipDisplay) {
             ipDisplay.textContent = `IP Kontrolera: ${this.getControllerIP()}`;
         }
+
+        // Jeśli włączono P2P, spróbuj nawiązać połączenie P2P
+        if (this.p2pEnabled) {
+            this.initP2PConnection();
+        }
     }
 
     // Funkcja pomocnicza do pobierania IP kontrolera
@@ -742,6 +749,132 @@ class GameCommunication {
         if (callback) {
             setTimeout(callback, 200);
         }
+    }
+
+    initP2PConnection() {
+        console.log('🌐 INICJALIZACJA POŁĄCZENIA P2P');
+
+        // Sprawdź, czy przeglądarka obsługuje WebRTC
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            console.error('❌ WebRTC nie jest obsługiwane w tej przeglądarce');
+            return;
+        }
+
+        // Utwórz nowy obiekt RTCPeerConnection
+        this.peerConnection = new RTCPeerConnection({
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' }, // Publiczny serwer STUN od Google
+                { urls: 'stun:stun1.l.google.com:19302' },
+                { urls: 'stun:stun2.l.google.com:19302' },
+                { urls: 'stun:stun3.l.google.com:19302' }
+            ]
+        });
+
+        // Obsługuje zdarzenie, gdy połączenie P2P zostanie nawiązane
+        this.peerConnection.oniceconnectionstatechange = () => {
+            console.log('🔄 Stan połączenia P2P zmieniony:', this.peerConnection.iceConnectionState);
+
+            if (this.peerConnection.iceConnectionState === 'connected') {
+                console.log('✅ Połączenie P2P nawiązane!');
+                this.p2pConnected = true;
+
+                // Po nawiązaniu połączenia, wymień dane graczy przez P2P
+                this.exchangePlayerDataP2P();
+            } else if (this.peerConnection.iceConnectionState === 'disconnected' || this.peerConnection.iceConnectionState === 'failed') {
+                console.log('❌ Połączenie P2P utracone');
+                this.p2pConnected = false;
+
+                // Spróbuj ponownie nawiązać połączenie P2P
+                setTimeout(() => {
+                    this.reconnectP2P();
+                }, 3000);
+            }
+        };
+
+        // Obsługuje zdarzenie błędu ICE
+        this.peerConnection.onicecandidateerror = (error) => {
+            console.error('❌ Błąd kandydata ICE:', error);
+        };
+
+        // Rozpocznij proces wymiany ofert i odpowiedzi
+        this.createOffer();
+    }
+
+    createOffer() {
+        console.log('📞 Tworzenie oferty połączenia P2P...');
+
+        this.peerConnection.createOffer()
+            .then(offer => {
+                console.log('📄 Oferta połączenia P2P utworzona:', offer);
+
+                // Ustaw lokalną ofertę
+                return this.peerConnection.setLocalDescription(offer);
+            })
+            .then(() => {
+                console.log('✅ Lokalna oferta ustawiona, wysyłanie do drugiego gracza...');
+
+                // Wyślij ofertę do drugiego gracza przez hosta
+                this.sendToHost('p2pOffer', {
+                    playerId: this.playerId,
+                    sdp: this.peerConnection.localDescription
+                });
+            })
+            .catch(error => {
+                console.error('❌ Błąd podczas tworzenia oferty P2P:', error);
+            });
+    }
+
+    handleP2PAnswer(answer) {
+        console.log('📩 Otrzymano odpowiedź na ofertę P2P:', answer);
+
+        // Ustaw zdalny opis połączenia
+        this.peerConnection.setRemoteDescription(new RTCSessionDescription(answer))
+            .then(() => {
+                console.log('✅ Zdalny opis połączenia P2P ustawiony');
+            })
+            .catch(error => {
+                console.error('❌ Błąd podczas ustawiania zdalnego opisu połączenia P2P:', error);
+            });
+    }
+
+    addIceCandidate(candidate) {
+        console.log('➕ Dodawanie kandydata ICE:', candidate);
+
+        // Dodaj kandydata ICE do połączenia
+        this.peerConnection.addIceCandidate(new RTCIceCandidate(candidate))
+            .then(() => {
+                console.log('✅ Kandydat ICE dodany');
+            })
+            .catch(error => {
+                console.error('❌ Błąd podczas dodawania kandydata ICE:', error);
+            });
+    }
+
+    exchangePlayerDataP2P() {
+        console.log('🔄 Wymiana danych graczy przez P2P');
+
+        // Wyślij aktualne dane graczy przez P2P
+        Object.keys(this.playerData).forEach(playerKey => {
+            const playerId = playerKey.replace('player', '');
+            const tiltValue = this.playerData[playerKey].tilt;
+
+            // Przekaż dane o pochyleniu gracza przez P2P
+            this.sendToHost('playerDataP2P', {
+                playerId: playerId,
+                tilt: tiltValue
+            });
+        });
+    }
+
+    reconnectP2P() {
+        console.log('🔄 Próba ponownego nawiązania połączenia P2P...');
+
+        // Zresetuj połączenie P2P
+        this.peerConnection.close();
+        this.p2pConnected = false;
+
+        // Spróbuj ponownie nawiązać połączenie P2P
+        this.initP2PConnection();
     }
 }
 
