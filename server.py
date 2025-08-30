@@ -153,6 +153,25 @@ class PongGameHandler(http.server.SimpleHTTPRequestHandler):
         # Obsłuż dane od kontrolerów
         if self.path == '/controller-data':
             self.handle_controller_data()
+        elif self.path == '/controller-input':
+            content_length = int(self.headers['Content-Length'])
+            post_data = self.rfile.read(content_length)
+            try:
+                data = json.loads(post_data)
+                print(f"📥 Odebrano dane od kontrolera: {data}")
+
+                # Możesz tutaj dodać logikę przetwarzania danych
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps({'status': 'success', 'message': 'Dane odebrane pomyślnie'}).encode())
+            except json.JSONDecodeError:
+                print("❌ Błąd dekodowania JSON")
+                self.send_response(400)
+                self.send_header('Content-type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps({'status': 'error', 'message': 'Nieprawidłowy format JSON'}).encode())
+            return
         else:
             print(f"❌ Nieznany POST endpoint: {self.path}")
             self.send_response(404)

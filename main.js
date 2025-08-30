@@ -150,6 +150,22 @@ function startGameFromQR() {
     // Przejście do ekranu gry
     showScreen('gameScreen');
 
+    // Aktualizuj odchylenie Gracza 1 i Gracza 2 na ekranie gry
+    setInterval(() => {
+        const player1TiltElement = document.getElementById('gamePlayer1Tilt');
+        const player2TiltElement = document.getElementById('gamePlayer2Tilt');
+
+        if (player1TiltElement) {
+            const tilt1 = gameComm.playerData.player1.tilt || 0;
+            player1TiltElement.textContent = `${(tilt1 * 45).toFixed(1)}°`;
+        }
+
+        if (player2TiltElement) {
+            const tilt2 = gameComm.playerData.player2.tilt || 0;
+            player2TiltElement.textContent = `${(tilt2 * 45).toFixed(1)}°`;
+        }
+    }, 100);
+
     console.log('Gra rozpoczęta z kontrolerami QR!');
 }
 

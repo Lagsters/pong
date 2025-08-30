@@ -161,6 +161,12 @@ class PongGame {
         // Ograniczenie do granic ekranu (dodatkowe zabezpieczenie)
         this.player1Paddle.y = Math.max(0, Math.min(playableHeight, this.player1Paddle.y));
         this.player2Paddle.y = Math.max(0, Math.min(playableHeight, this.player2Paddle.y));
+
+        // Aktualizuj wyświetlanie odchylenia Gracza 2
+        const player2TiltDisplay = document.getElementById('gamePlayer2Tilt');
+        if (player2TiltDisplay) {
+            player2TiltDisplay.textContent = `Pochylenie Gracza 2: ${(player2Tilt * 45).toFixed(1)}°`;
+        }
     }
 
     updateBall() {

@@ -353,6 +353,12 @@ class GameCommunication {
                     window.game.player2Tilt = data.tilt;
                 }
             }
+
+            // Wyświetl odchylenie Gracza 2 w sekcji kontrolera
+            const player2TiltDisplay = document.getElementById('player2TiltDisplay');
+            if (player2TiltDisplay && data.playerId === '2') {
+                player2TiltDisplay.textContent = `Pochylenie Gracza 2: ${(data.tilt * 45).toFixed(1)}°`;
+            }
         }
     }
 
@@ -417,6 +423,17 @@ class GameCommunication {
             // Nawet jeśli żyroskop nie działa, gracz jest już połączony
             console.log(`Gracz ${this.playerId} połączony, ale żyroskop nie działa`);
         }
+
+        // Wyświetl IP kontrolera na ekranie gry
+        const ipDisplay = document.getElementById('controllerIP');
+        if (ipDisplay) {
+            ipDisplay.textContent = `IP Kontrolera: ${this.getControllerIP()}`;
+        }
+    }
+
+    // Funkcja pomocnicza do pobierania IP kontrolera
+    getControllerIP() {
+        return this.controllerIP || 'Nieznane';
     }
 
     startSendingData() {
@@ -429,6 +446,9 @@ class GameCommunication {
         gyroscope.onOrientationChange((orientation, tilt) => {
             const now = Date.now();
 
+            // Ogranicz zakres odchylenia od -45° do +45°
+            const limitedTilt = Math.max(-45, Math.min(45, tilt * 45));
+
             // Ograniczenie częstotliwości wysyłania aby nie przeciążać serwera
             if (now - lastSentTime < sendInterval) {
                 return;
@@ -439,7 +459,7 @@ class GameCommunication {
             if (!this.lastSendLogTime || Date.now() - this.lastSendLogTime > 1000) {
                 console.log('📡 Wysyłam dane żyroskopu:', {
                     playerId: this.playerId,
-                    tilt: tilt,
+                    tilt: limitedTilt,
                     orientation: orientation
                 });
                 this.lastSendLogTime = Date.now();
@@ -448,13 +468,13 @@ class GameCommunication {
             // Aktualizuj wyświetlanie z lepszą precyzją
             const tiltDisplay = document.getElementById('tiltDisplay');
             if (tiltDisplay) {
-                tiltDisplay.textContent = `Pochylenie: ${(tilt * 100).toFixed(1)}%`;
+                tiltDisplay.textContent = `Pochylenie: ${limitedTilt.toFixed(1)}°`;
             }
 
             // Dodaj wizualny wskaźnik ruchu
             const indicator = document.getElementById('movementIndicator');
             if (indicator) {
-                const movement = Math.abs(tilt * 100);
+                const movement = Math.abs(limitedTilt);
                 indicator.style.width = `${Math.min(100, movement * 2)}%`;
                 indicator.style.backgroundColor = movement > 20 ? '#28a745' : '#ffc107';
             }
@@ -462,7 +482,7 @@ class GameCommunication {
             // Wyślij dane do hosta z większą precyzją
             this.sendToHost('playerData', {
                 playerId: this.playerId,
-                tilt: parseFloat(tilt.toFixed(3)), // Większa precyzja
+                tilt: parseFloat(limitedTilt.toFixed(3)), // Większa precyzja
                 orientation: {
                     beta: parseFloat(orientation.beta.toFixed(1)),
                     gamma: parseFloat(orientation.gamma.toFixed(1))
