@@ -127,8 +127,8 @@ class PongGame {
             // Debug - loguj dane co sekundę podczas gry
             if (!this.lastPaddleLogTime || Date.now() - this.lastPaddleLogTime > 1000) {
                 console.log('🎮 Dane paletek:', {
-                    player1Tilt: player1Tilt.toFixed(3),
-                    player2Tilt: player2Tilt.toFixed(3),
+                    player1Tilt: player1Tilt.toFixed(1) + '%',
+                    player2Tilt: player2Tilt.toFixed(1) + '%',
                     player1Y: Math.round(this.player1Paddle.y),
                     player2Y: Math.round(this.player2Paddle.y)
                 });
@@ -140,32 +140,34 @@ class PongGame {
             player2Tilt = this.player2Tilt || 0;
         }
 
-        // NOWY ALGORYTM: Pozycjonowanie proporcjonalne do kąta odchylenia
+        // NOWY ALGORYTM: Pozycjonowanie proporcjonalne do odchylenia procentowego
         // Dostępna przestrzeń dla paletki (wysokość ekranu minus wysokość paletki)
         const playableHeight = this.height - this.paddleHeight;
 
-        // Środek ekranu dla paletki (gdy telefon pionowo)
+        // Środek ekranu dla paletki (gdy telefon pionowo, tilt = 0%)
         const centerY = playableHeight / 2;
 
-        // Konwersja tilt (-1 do +1) na pozycję paletki
-        // tilt = -1 (pochylenie w lewo) -> paletka na dole (y = playableHeight)
-        // tilt = 0 (telefon pionowo) -> paletka w środku (y = centerY)
-        // tilt = +1 (pochylenie w prawo) -> paletka na górze (y = 0)
+        // Konwersja tilt (-100% do +100%) na pozycję paletki
+        // tilt = -100% (max pochylenie w lewo) -> paletka na dole (y = playableHeight)
+        // tilt = 0% (telefon pionowo) -> paletka w środku (y = centerY)
+        // tilt = +100% (max pochylenie w prawo) -> paletka na górze (y = 0)
 
-        // Gracz 1 (lewa paletka)
-        this.player1Paddle.y = centerY - (player1Tilt * centerY);
+        // Gracz 1 (lewa paletka) - konwersja z -100/+100 na -1/+1
+        const player1TiltNormalized = player1Tilt / 100;
+        this.player1Paddle.y = centerY - (player1TiltNormalized * centerY);
 
-        // Gracz 2 (prawa paletka)
-        this.player2Paddle.y = centerY - (player2Tilt * centerY);
+        // Gracz 2 (prawa paletka) - konwersja z -100/+100 na -1/+1
+        const player2TiltNormalized = player2Tilt / 100;
+        this.player2Paddle.y = centerY - (player2TiltNormalized * centerY);
 
         // Ograniczenie do granic ekranu (dodatkowe zabezpieczenie)
         this.player1Paddle.y = Math.max(0, Math.min(playableHeight, this.player1Paddle.y));
         this.player2Paddle.y = Math.max(0, Math.min(playableHeight, this.player2Paddle.y));
 
-        // Aktualizuj wyświetlanie odchylenia Gracza 2
+        // Aktualizuj wyświetlanie odchylenia Gracza 2 w skali procentowej
         const player2TiltDisplay = document.getElementById('gamePlayer2Tilt');
         if (player2TiltDisplay) {
-            player2TiltDisplay.textContent = `Pochylenie Gracza 2: ${(player2Tilt * 45).toFixed(1)}°`;
+            player2TiltDisplay.textContent = `Pochylenie Gracza 2: ${player2Tilt.toFixed(1)}%`;
         }
     }
 

@@ -89,15 +89,15 @@ class GyroscopeController {
 
         // Używamy tylko osi gamma (lewo/prawo) do sterowania paletką
         // gamma: -90° do +90° (lewo do prawo)
-        // Pochylenie w lewo (ujemne gamma) = paletka na dole (-1)
-        // Pochylenie w prawo (dodatnie gamma) = paletka na górze (+1)
+        // Pochylenie w lewo (ujemne gamma) = paletka na dole (-100%)
+        // Pochylenie w prawo (dodatnie gamma) = paletka na górze (+100%)
         const gammaChange = this.orientation.gamma - this.calibrationOffset;
 
-        // Mapuj zakres ±45° na -1 do +1
-        const tilt = gammaChange / 45;
+        // Mapuj zakres ±45° na -100 do +100 (skala procentowa)
+        const tiltPercent = (gammaChange / 45) * 100;
 
-        // Ogranicz do zakresu -1 do +1
-        return Math.max(-1, Math.min(1, tilt));
+        // Ogranicz do zakresu -100 do +100
+        return Math.max(-100, Math.min(100, tiltPercent));
     }
 
     onOrientationChange(callback) {

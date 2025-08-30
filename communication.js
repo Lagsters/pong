@@ -305,7 +305,7 @@ class GameCommunication {
             const textLink = qrSection.querySelector('.text-link');
             if (textLink) textLink.style.display = 'none';
 
-            // Pokaż komunikat o połączeniu
+            // Pokaż komunikat o połączeniu z wyświetlaniem odchylenia na żywo
             let connectedMsg = qrSection.querySelector('.connected-message');
             if (!connectedMsg) {
                 connectedMsg = document.createElement('div');
@@ -322,7 +322,12 @@ class GameCommunication {
                 `;
                 connectedMsg.innerHTML = `
                     ✅ Gracz ${playerId} połączony!<br>
-                    <small style="font-size: 0.9rem;">Telefon jest gotowy do gry</small>
+                    <div id="player${playerId}TiltLive" style="font-size: 1.5rem; margin-top: 10px; color: #FFD700;">
+                        Odchylenie: 0%
+                    </div>
+                    <div style="font-size: 0.8rem; margin-top: 5px; opacity: 0.8;">
+                        Skala: -100% do +100%
+                    </div>
                 `;
                 qrSection.appendChild(connectedMsg);
             }
@@ -354,10 +359,27 @@ class GameCommunication {
                 }
             }
 
-            // Wyświetl odchylenie Gracza 2 w sekcji kontrolera
+            // Wyświetl odchylenie w skali procentowej
             const player2TiltDisplay = document.getElementById('player2TiltDisplay');
             if (player2TiltDisplay && data.playerId === '2') {
-                player2TiltDisplay.textContent = `Pochylenie Gracza 2: ${(data.tilt * 45).toFixed(1)}°`;
+                player2TiltDisplay.textContent = `Pochylenie Gracza 2: ${data.tilt.toFixed(1)}%`;
+            }
+
+            // Aktualizuj na żywo wyświetlanie odchylenia na ekranie głównym
+            const tiltLiveDisplay = document.getElementById(`player${data.playerId}TiltLive`);
+            if (tiltLiveDisplay) {
+                const tiltValue = data.tilt.toFixed(1);
+                tiltLiveDisplay.textContent = `Odchylenie: ${tiltValue}%`;
+
+                // Dodaj kolorowanie w zależności od wartości
+                const absValue = Math.abs(data.tilt);
+                if (absValue < 10) {
+                    tiltLiveDisplay.style.color = '#FFD700'; // Złoty - środek
+                } else if (absValue < 50) {
+                    tiltLiveDisplay.style.color = '#90EE90'; // Jasno zielony - lekkie odchylenie
+                } else {
+                    tiltLiveDisplay.style.color = '#FF6B6B'; // Czerwony - duże odchylenie
+                }
             }
         }
     }
@@ -443,11 +465,12 @@ class GameCommunication {
         let lastSentTime = 0;
         const sendInterval = 50; // 50ms = 20 razy na sekundę
 
-        gyroscope.onOrientationChange((orientation, tilt) => {
+        gyroscope.onOrientationChange((orientation, tiltPercent) => {
             const now = Date.now();
 
-            // Ogranicz zakres odchylenia od -45° do +45°
-            const limitedTilt = Math.max(-45, Math.min(45, tilt * 45));
+            // tiltPercent jest już w skali -100 do +100
+            // Ogranicz do zakresu -100 do +100 (dla pewności)
+            const limitedTiltPercent = Math.max(-100, Math.min(100, tiltPercent));
 
             // Ograniczenie częstotliwości wysyłania aby nie przeciążać serwera
             if (now - lastSentTime < sendInterval) {
@@ -455,12 +478,12 @@ class GameCommunication {
             }
             lastSentTime = now;
 
-            // Debug - loguj wysyłane dane
-            if (!this.lastSendLogTime || Date.now() - this.lastSendLogTime > 1000) {
-                console.log('📡 Wysyłam dane żyroskopu:', {
+            // Debug - loguj wysyłane dane CZĘŚCIEJ
+            if (!this.lastSendLogTime || Date.now() - this.lastSendLogTime > 500) {
+                console.log('📡 WYSYŁAM DANE DO HOSTA:', {
                     playerId: this.playerId,
-                    tilt: limitedTilt,
-                    orientation: orientation
+                    tiltPercent: limitedTiltPercent,
+                    url: `${this.hostUrl}/controller-data`
                 });
                 this.lastSendLogTime = Date.now();
             }
@@ -468,21 +491,21 @@ class GameCommunication {
             // Aktualizuj wyświetlanie z lepszą precyzją
             const tiltDisplay = document.getElementById('tiltDisplay');
             if (tiltDisplay) {
-                tiltDisplay.textContent = `Pochylenie: ${limitedTilt.toFixed(1)}°`;
+                tiltDisplay.textContent = `Pochylenie: ${limitedTiltPercent.toFixed(1)}%`;
             }
 
             // Dodaj wizualny wskaźnik ruchu
             const indicator = document.getElementById('movementIndicator');
             if (indicator) {
-                const movement = Math.abs(limitedTilt);
-                indicator.style.width = `${Math.min(100, movement * 2)}%`;
+                const movement = Math.abs(limitedTiltPercent);
+                indicator.style.width = `${Math.min(100, movement)}%`;
                 indicator.style.backgroundColor = movement > 20 ? '#28a745' : '#ffc107';
             }
 
-            // Wyślij dane do hosta z większą precyzją
+            // Wyślij dane do hosta z wartością procentową
             this.sendToHost('playerData', {
                 playerId: this.playerId,
-                tilt: parseFloat(limitedTilt.toFixed(3)), // Większa precyzja
+                tilt: parseFloat(limitedTiltPercent.toFixed(1)), // Wartość procentowa -100 do +100
                 orientation: {
                     beta: parseFloat(orientation.beta.toFixed(1)),
                     gamma: parseFloat(orientation.gamma.toFixed(1))
@@ -625,6 +648,13 @@ class GameCommunication {
                                 window.game.player2Tilt = playerData.tilt;
                             }
                         }
+
+                        // DODAJ: Aktualizuj wyświetlanie odchylenia na żywo
+                        const playerId = playerKey.replace('player', '');
+                        this.handlePlayerData({
+                            playerId: playerId,
+                            tilt: playerData.tilt
+                        });
                     }
                 });
             }
