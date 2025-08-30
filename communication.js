@@ -613,16 +613,8 @@ class GameCommunication {
             if (response.ok) {
                 const gameData = await response.json();
 
-                // Debug - loguj zawsze pierwsze 5 sekund, potem tylko przy zmianach
-                const shouldDebug = Date.now() - (this.startTime || Date.now()) < 5000;
-
-                if (shouldDebug) {
-                    console.log('🔄 Pobrane dane z serwera:', gameData);
-                    console.log('🏠 Current host state:', {
-                        isHost: this.isHost,
-                        connectedPlayers: this.connectedPlayers
-                    });
-                }
+                // Sprawdź, czy są jakieś zmiany w połączeniach graczy
+                let connectionChanged = false;
 
                 // Aktualizuj stan połączonych graczy
                 Object.keys(gameData.connectedPlayers).forEach(playerKey => {
@@ -630,17 +622,21 @@ class GameCommunication {
                     const wasConnected = this.connectedPlayers[playerKey];
                     const isConnected = gameData.connectedPlayers[playerKey];
 
-                    if (!wasConnected && isConnected) {
-                        console.log('🔄 Pobrane dane z serwera:', gameData);
-                        console.log(`🔍 Gracz ${playerId}: was=${wasConnected}, is=${isConnected}`);
-                        console.log(`🎉 NOWE POŁĄCZENIE - Gracz ${playerId}!`);
-                        this.handlePlayerConnect(playerId);
+                    if (wasConnected !== isConnected) {
+                        connectionChanged = true;
+
+                        if (!wasConnected && isConnected) {
+                            console.log(`🎉 NOWE POŁĄCZENIE - Gracz ${playerId}!`);
+                            this.handlePlayerConnect(playerId);
+                        } else if (wasConnected && !isConnected) {
+                            console.log(`⚠️ Gracz ${playerId} rozłączył się!`);
+                        }
                     }
 
                     this.connectedPlayers[playerKey] = isConnected;
                 });
 
-                // Aktualizuj dane graczy
+                // Aktualizuj dane graczy (bez logowania)
                 Object.keys(gameData.playerData).forEach(playerKey => {
                     const playerData = gameData.playerData[playerKey];
                     if (playerData.tilt !== undefined) {
@@ -656,7 +652,7 @@ class GameCommunication {
                             }
                         }
 
-                        // DODAJ: Aktualizuj wyświetlanie odchylenia na żywo
+                        // Aktualizuj wyświetlanie odchylenia na żywo
                         const playerId = playerKey.replace('player', '');
                         this.handlePlayerData({
                             playerId: playerId,
@@ -752,11 +748,12 @@ class GameCommunication {
     }
 
     initP2PConnection() {
-        console.log('🌐 INICJALIZACJA POŁĄCZENIA P2P');
+        console.log('🌐 INICJALIZACJA POŁĄCZENIA P2P - Gracz ' + this.playerId);
+        console.log('📡 Próba nawiązania bezpośredniego połączenia P2P z hostem...');
 
         // Sprawdź, czy przeglądarka obsługuje WebRTC
         if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-            console.error('❌ WebRTC nie jest obsługiwane w tej przeglądarce');
+            console.error('❌ WebRTC nie jest obsługiwane w tej przeglądarce - nie można nawiązać połączenia P2P');
             return;
         }
 
@@ -770,22 +767,36 @@ class GameCommunication {
             ]
         });
 
+        console.log('🔌 Połączenie P2P zostało zainicjowane - konfiguracja WebRTC zakończona');
+
+        // Rejestracja kandydatów ICE
+        this.peerConnection.onicecandidate = (event) => {
+            if (event.candidate) {
+                console.log('🧊 Nowy kandydat ICE znaleziony:', event.candidate.candidate.substr(0, 50) + '...');
+            }
+        };
+
         // Obsługuje zdarzenie, gdy połączenie P2P zostanie nawiązane
         this.peerConnection.oniceconnectionstatechange = () => {
-            console.log('🔄 Stan połączenia P2P zmieniony:', this.peerConnection.iceConnectionState);
+            const state = this.peerConnection.iceConnectionState;
+            console.log(`🔄 Stan połączenia P2P zmieniony: ${state} (Gracz ${this.playerId})`);
 
-            if (this.peerConnection.iceConnectionState === 'connected') {
-                console.log('✅ Połączenie P2P nawiązane!');
+            if (state === 'checking') {
+                console.log('🔎 Sprawdzanie możliwości nawiązania połączenia P2P...');
+            } else if (state === 'connected' || state === 'completed') {
+                console.log('✅ POŁĄCZENIE P2P NAWIĄZANE! Bezpośrednia komunikacja z hostem aktywna.');
+                console.log('📊 Komunikacja gry teraz działa w trybie P2P z mniejszym opóźnieniem.');
                 this.p2pConnected = true;
 
                 // Po nawiązaniu połączenia, wymień dane graczy przez P2P
                 this.exchangePlayerDataP2P();
-            } else if (this.peerConnection.iceConnectionState === 'disconnected' || this.peerConnection.iceConnectionState === 'failed') {
-                console.log('❌ Połączenie P2P utracone');
+            } else if (state === 'disconnected' || state === 'failed') {
+                console.log('❌ Połączenie P2P utracone - powrót do standardowej komunikacji');
                 this.p2pConnected = false;
 
                 // Spróbuj ponownie nawiązać połączenie P2P
                 setTimeout(() => {
+                    console.log('🔄 Automatyczna próba ponownego nawiązania połączenia P2P...');
                     this.reconnectP2P();
                 }, 3000);
             }
@@ -840,7 +851,7 @@ class GameCommunication {
     addIceCandidate(candidate) {
         console.log('➕ Dodawanie kandydata ICE:', candidate);
 
-        // Dodaj kandydata ICE do połączenia
+        // Dodaj kandyta ICE do połączenia
         this.peerConnection.addIceCandidate(new RTCIceCandidate(candidate))
             .then(() => {
                 console.log('✅ Kandydat ICE dodany');

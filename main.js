@@ -48,36 +48,44 @@ document.addEventListener('DOMContentLoaded', async function() {
     // Automatycznie rozpocznij jako host - bez przycisku
     await startAsHost();
 
-    // Obsługa przycisku rozpoczęcia gry z QR
-    document.getElementById('startGameFromQR').addEventListener('click', function() {
-        startGameFromQR();
-    });
-
     // Obsługa przycisków w grze
-    document.getElementById('pauseBtn').addEventListener('click', function() {
-        if (game) {
-            game.pause();
-            this.textContent = game.isPaused ? 'Wznów' : 'Pauza';
-        }
-    });
+    const pauseBtn = document.getElementById('pauseBtn');
+    if (pauseBtn) {
+        pauseBtn.addEventListener('click', function() {
+            if (game) {
+                game.pause();
+                this.textContent = game.isPaused ? 'Wznów' : 'Pauza';
+            }
+        });
+    }
 
-    document.getElementById('backToMenuBtn').addEventListener('click', function() {
-        if (game) {
-            game.stop();
-        }
-        resetGame();
-        showScreen('menu');
-    });
+    const backToMenuBtn = document.getElementById('backToMenuBtn');
+    if (backToMenuBtn) {
+        backToMenuBtn.addEventListener('click', function() {
+            if (game) {
+                game.stop();
+            }
+            resetGame();
+            showScreen('qrScreen');
+        });
+    }
 
     // Obsługa przycisków na ekranie końca gry
-    document.getElementById('playAgainBtn').addEventListener('click', function() {
-        startGameFromQR();
-    });
+    const playAgainBtn = document.getElementById('playAgainBtn');
+    if (playAgainBtn) {
+        playAgainBtn.addEventListener('click', function() {
+            resetGame();
+            showScreen('qrScreen');
+        });
+    }
 
-    document.getElementById('backToMenuBtn2').addEventListener('click', function() {
-        resetGame();
-        showScreen('menu');
-    });
+    const backToMenuBtn2 = document.getElementById('backToMenuBtn2');
+    if (backToMenuBtn2) {
+        backToMenuBtn2.addEventListener('click', function() {
+            resetGame();
+            showScreen('qrScreen');
+        });
+    }
 
     // Zapobieganie przewijaniu na urządzeniach mobilnych
     document.addEventListener('touchmove', function(e) {
