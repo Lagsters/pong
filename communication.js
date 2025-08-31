@@ -32,29 +32,29 @@ class GameCommunication {
         console.log('🔍 SPRAWDZAM TRYB KONTROLERA...');
         const urlParams = new URLSearchParams(window.location.search);
         const player = urlParams.get('player');
-        const host = urlParams.get('host');
 
         console.log('📋 URLSearchParams:', urlParams.toString());
         console.log('👤 player parametr:', player);
-        console.log('🏠 host parametr:', host);
 
-        if (player && host) {
-            console.log('✅ PARAMETRY ZNALEZIONE - inicjalizuję kontroler');
+        if (player) {
+            console.log('✅ PARAMETR GRACZA ZNALEZIONY - inicjalizuję kontroler');
             this.isController = true;
             this.playerId = player;
-            this.hostUrl = decodeURIComponent(host);
+
+            // Automatycznie określ adres hosta na podstawie obecnego URL
+            this.hostUrl = `${window.location.protocol}//${window.location.host}`;
+
             console.log('🎯 Ustawiono isController:', this.isController);
             console.log('👤 Ustawiono playerId:', this.playerId);
-            console.log('🌐 Ustawiono hostUrl:', this.hostUrl);
+            console.log('🌐 Automatycznie określono hostUrl:', this.hostUrl);
 
             // Opóźnienie aby DOM był gotowy + wielokrotne próby połączenia
             setTimeout(() => {
                 this.initController();
             }, 500);
         } else {
-            console.log('❌ BRAK PARAMETRÓW - to nie jest kontroler');
+            console.log('❌ BRAK PARAMETRU GRACZA - to nie jest kontroler');
             console.log('❓ player:', player);
-            console.log('❓ host:', host);
         }
     }
 
@@ -63,8 +63,8 @@ class GameCommunication {
         const localIP = window.location.hostname || '192.168.100.2';
         const port = window.location.port || '8000';
         const protocol = window.location.protocol || 'https:';
-        const currentUrl = `${protocol}//${localIP}:${port}${window.location.pathname}`;
-        return `${currentUrl}?player=${playerId}`;
+        const hostUrl = `${protocol}//${localIP}:${port}`;
+        return `${hostUrl}/controller.html?player=${playerId}`;
     }
 
     async initHost() {

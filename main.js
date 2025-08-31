@@ -10,42 +10,16 @@ function showScreen(screenId) {
     document.getElementById(screenId).classList.add('active');
 }
 
-// Inicjalizacja po załadowaniu strony
+// Inicjalizacja po załadowaniu strony - tylko dla gry/hosta
 document.addEventListener('DOMContentLoaded', async function() {
-    // Sprawdź ponownie czy to kontroler na podstawie URL (dodatkowe sprawdzenie)
-    const urlParams = new URLSearchParams(window.location.search);
-    const player = urlParams.get('player');
-    const host = urlParams.get('host');
-
-    console.log('DOMContentLoaded - sprawdzanie parametrów URL:', { player, host });
-
-    if (player) {
-        console.log('Wykryto parametr kontrolera, inicjalizacja...');
-
-        // Upewnij się, że gameComm jest kontrolerem
-        if (!gameComm.isController) {
-            gameComm.isController = true;
-            gameComm.playerId = player;
-            gameComm.hostUrl = host ? decodeURIComponent(host) : null;
-            await gameComm.initController();
-        }
-        return; // Kontroler ma własną inicjalizację
-    }
-
-    // Sprawdź czy to kontroler na podstawie URL (fallback)
-    if (gameComm.isController) {
-        console.log('gameComm już jest kontrolerem');
-        return; // Kontroler ma własną inicjalizację
-    }
-
-    console.log('Automatyczna inicjalizacja jako host - bez przycisku');
+    console.log('Host DOMContentLoaded - automatyczna inicjalizacja jako host');
 
     // Sprawdzenie obsługi żyroskopu
     if (!gyroscope.checkSupport()) {
         console.warn('Żyroskop nie jest obsługiwany. Kontrolery mogą nie działać poprawnie.');
     }
 
-    // Automatycznie rozpocznij jako host - bez przycisku
+    // Automatycznie rozpocznij jako host
     await startAsHost();
 
     // Obsługa przycisków w grze
