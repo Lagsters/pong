@@ -58,7 +58,10 @@ class GameCommunication {
     }
 
     generateControllerUrl(playerId, peerId) {
-        const baseUrl = `${window.location.protocol}//${window.location.host}/controller.html`;
+        // Automatycznie wykryj bazowy URL z aktualnej ścieżki
+        const currentPath = window.location.pathname;
+        const basePath = currentPath.endsWith('/') ? currentPath : currentPath + '/';
+        const baseUrl = `${window.location.protocol}//${window.location.host}${basePath}controller.html`;
         return `${baseUrl}?player=${playerId}&peerID=${peerId}`;
     }
 
