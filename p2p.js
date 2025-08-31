@@ -286,12 +286,29 @@ class PeerToPeerConnection {
     // Zaktualizuj QR kody z Peer ID
     updateQRCodes(peerId) {
         // Automatycznie wykryj bazowy URL z aktualnej ścieżki (dla GitHub Pages)
-        const currentPath = window.location.pathname;
+        let currentPath = window.location.pathname;
+
+        // Jeśli ścieżka to `/pong` (bez slash na końcu), dodaj slash
+        if (currentPath === '/pong') {
+            currentPath = '/pong/';
+        }
+
+        // Jeśli ścieżka to `/` (root), zostaw jak jest
+        // Jeśli ścieżka to `/pong/` lub inna ze slash, zostaw jak jest
         const basePath = currentPath.endsWith('/') ? currentPath : currentPath + '/';
+
+        console.log('🔍 p2p.js - Wykryta ścieżka:', {
+            originalPath: window.location.pathname,
+            processedPath: currentPath,
+            basePath: basePath
+        });
+
         const baseUrl = `${window.location.protocol}//${window.location.host}${basePath}controller.html`;
 
         // QR kod dla gracza 1
         const player1Url = `${baseUrl}?player=player1&peerID=${peerId}`;
+        console.log('🔗 p2p.js - Player 1 URL:', player1Url);
+
         const qr1 = document.getElementById('qr1');
         if (qr1 && window.QRCode) {
             qr1.innerHTML = '';
@@ -304,6 +321,8 @@ class PeerToPeerConnection {
 
         // QR kod dla gracza 2
         const player2Url = `${baseUrl}?player=player2&peerID=${peerId}`;
+        console.log('🔗 p2p.js - Player 2 URL:', player2Url);
+
         const qr2 = document.getElementById('qr2');
         if (qr2 && window.QRCode) {
             qr2.innerHTML = '';

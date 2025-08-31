@@ -59,10 +59,25 @@ class GameCommunication {
 
     generateControllerUrl(playerId, peerId) {
         // Automatycznie wykryj bazowy URL z aktualnej ścieżki
-        const currentPath = window.location.pathname;
-        const basePath = currentPath.endsWith('/') ? currentPath : currentPath + '/';
-        const baseUrl = `${window.location.protocol}//${window.location.host}${basePath}controller.html`;
-        return `${baseUrl}?player=${playerId}&peerID=${peerId}`;
+        let currentPath = window.location.pathname;
+
+        // Uniwersalne: jeśli ścieżka nie kończy się slashem, dodaj go
+        // To obsłuży /pong, /my-game, /folder/subfolder itp.
+        if (!currentPath.endsWith('/')) {
+            currentPath = currentPath + '/';
+        }
+
+        console.log('🔍 Wykryta ścieżka:', {
+            originalPath: window.location.pathname,
+            processedPath: currentPath
+        });
+
+        const baseUrl = `${window.location.protocol}//${window.location.host}${currentPath}controller.html`;
+        const fullUrl = `${baseUrl}?player=${playerId}&peerID=${peerId}`;
+
+        console.log('🔗 Wygenerowany URL kontrolera:', fullUrl);
+
+        return fullUrl;
     }
 
     async initHost() {
