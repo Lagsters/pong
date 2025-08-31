@@ -13,7 +13,6 @@ class GameCommunication {
         this.ws = null;
         this.connectedPlayers = { player1: false, player2: false };
         this.playerData = { player1: { tilt: 0 }, player2: { tilt: 0 } };
-        this.p2pEnabled = true; // Włączenie funkcji P2P
         this.p2pConnected = false; // Status połączenia P2P
 
         console.log('🔍 Sprawdzam parametry URL...');
@@ -32,23 +31,23 @@ class GameCommunication {
         console.log('🔍 SPRAWDZAM TRYB KONTROLERA...');
         const urlParams = new URLSearchParams(window.location.search);
         const player = urlParams.get('player');
+        const peerID = urlParams.get('peerID');
 
         console.log('📋 URLSearchParams:', urlParams.toString());
         console.log('👤 player parametr:', player);
+        console.log('🆔 peerID parametr:', peerID);
 
         if (player) {
             console.log('✅ PARAMETR GRACZA ZNALEZIONY - inicjalizuję kontroler');
             this.isController = true;
             this.playerId = player;
-
-            // Automatycznie określ adres hosta na podstawie obecnego URL
-            this.hostUrl = `${window.location.protocol}//${window.location.host}`;
+            this.hostPeerId = peerID;
 
             console.log('🎯 Ustawiono isController:', this.isController);
             console.log('👤 Ustawiono playerId:', this.playerId);
-            console.log('🌐 Automatycznie określono hostUrl:', this.hostUrl);
+            console.log('🆔 Ustawiono hostPeerId:', this.hostPeerId);
 
-            // Opóźnienie aby DOM był gotowy + wielokrotne próby połączenia
+            // Opóźnienie aby DOM był gotowy + połączenie P2P
             setTimeout(() => {
                 this.initController();
             }, 500);
@@ -58,36 +57,51 @@ class GameCommunication {
         }
     }
 
-    generateControllerUrl(playerId) {
-        // Użyj lokalnego IP zamiast localhost/0.0.0.0
-        const localIP = window.location.hostname || '192.168.100.2';
-        const port = window.location.port || '8000';
-        const protocol = window.location.protocol || 'https:';
-        const hostUrl = `${protocol}//${localIP}:${port}`;
-        return `${hostUrl}/controller.html?player=${playerId}`;
+    generateControllerUrl(playerId, peerId) {
+        const baseUrl = `${window.location.protocol}//${window.location.host}/controller.html`;
+        return `${baseUrl}?player=${playerId}&peerID=${peerId}`;
     }
 
     async initHost() {
         this.isHost = true;
-        this.startTime = Date.now(); // Dodaj timestamp startu dla debugowania
+        this.startTime = Date.now();
 
         console.log('🏠 INICJALIZACJA HOSTA - START');
         console.log('🔄 isHost ustawione na:', this.isHost);
+
+        // Inicjalizuj P2P jako host
+        if (window.p2pConnection) {
+            await window.p2pConnection.initAsHost();
+        }
 
         // Rozpocznij nasłuchiwanie na połączenia NATYCHMIAST
         this.startHostListening();
 
         console.log('👂 Host nasłuchuje na połączenia graczy...');
-
-        // Generuj kody QR z opóźnieniem, aby elementy DOM były gotowe
-        setTimeout(async () => {
-            await this.generateQRCodes();
-        }, 100);
     }
 
     async generateQRCodes() {
-        const player1Url = this.generateControllerUrl('1');
-        const player2Url = this.generateControllerUrl('2');
+        // Czekaj aż P2P będzie miało Peer ID
+        let peerId = null;
+        let attempts = 0;
+        const maxAttempts = 50; // 5 sekund
+
+        while (!peerId && attempts < maxAttempts) {
+            if (window.p2pConnection && window.p2pConnection.hostPeerId) {
+                peerId = window.p2pConnection.hostPeerId;
+                break;
+            }
+            await new Promise(resolve => setTimeout(resolve, 100));
+            attempts++;
+        }
+
+        if (!peerId) {
+            console.error('❌ Nie udało się uzyskać Peer ID w czasie 5 sekund');
+            return;
+        }
+
+        const player1Url = this.generateControllerUrl('player1', peerId);
+        const player2Url = this.generateControllerUrl('player2', peerId);
 
         console.log('Generowanie kodów QR...');
         console.log('Player 1 URL:', player1Url);
@@ -283,21 +297,25 @@ class GameCommunication {
     }
 
     handlePlayerConnect(playerId) {
-        this.connectedPlayers[`player${playerId}`] = true;
+        // Konwertuj playerId do prawidłowego formatu
+        const playerNumber = playerId.replace('player', ''); // "player1" -> "1"
+
+        this.connectedPlayers[`player${playerNumber}`] = true;
 
         // Aktualizuj status na ekranie
-        const statusElement = document.getElementById(`status${playerId}`);
+        const statusElement = document.getElementById(`status${playerNumber}`);
         if (statusElement) {
             statusElement.textContent = 'Połączony!';
             statusElement.className = 'player-status connected';
         }
 
         // UKRYJ kod QR dla połączonego gracza
-        const qrSection = document.querySelector(`#qrPlayer${playerId}`).parentElement;
-        if (qrSection) {
+        const qrCanvas = document.getElementById(`qrPlayer${playerNumber}`);
+        if (qrCanvas) {
+            const qrSection = qrCanvas.parentElement;
+
             // Ukryj canvas QR
-            const canvas = qrSection.querySelector('canvas');
-            if (canvas) canvas.style.display = 'none';
+            if (qrCanvas) qrCanvas.style.display = 'none';
 
             // Ukryj alternatywne QR (z Google API)
             const googleQr = qrSection.querySelector('.google-qr');
@@ -323,8 +341,8 @@ class GameCommunication {
                     font-weight: bold;
                 `;
                 connectedMsg.innerHTML = `
-                    ✅ Gracz ${playerId} połączony!<br>
-                    <div id="player${playerId}TiltLive" style="font-size: 1.5rem; margin-top: 10px; color: #FFD700;">
+                    🎮 Gracz ${playerNumber} połączony!<br>
+                    <div id="player${playerNumber}TiltLive" style="font-size: 1.5rem; margin-top: 10px; color: #FFD700;">
                         Odchylenie: 0%
                     </div>
                     <div style="font-size: 0.8rem; margin-top: 5px; opacity: 0.8;">
@@ -333,6 +351,8 @@ class GameCommunication {
                 `;
                 qrSection.appendChild(connectedMsg);
             }
+        } else {
+            console.error(`❌ Nie znaleziono elementu qrPlayer${playerNumber}`);
         }
 
         // Sprawdź czy obaj gracze są połączeni - jeśli tak, rozpocznij grę automatycznie
@@ -345,19 +365,25 @@ class GameCommunication {
             }, 1500); // 1.5 sekundy opóźnienia
         }
 
-        console.log(`Gracz ${playerId} połączony`);
+        console.log(`Gracz ${playerNumber} połączony`);
     }
 
     handlePlayerData(data) {
+        console.log('🔄 handlePlayerData wywołane z danymi:', data);
+
         if (data.playerId && data.tilt !== undefined) {
+            console.log(`📊 Aktualizuję dane gracza ${data.playerId} z tilt: ${data.tilt}`);
+
             this.playerData[`player${data.playerId}`].tilt = data.tilt;
 
             // Przekaż dane do gry
             if (window.game) {
                 if (data.playerId === '1') {
                     window.game.player1Tilt = data.tilt;
+                    console.log(`🎮 Ustawiono player1Tilt na: ${data.tilt}`);
                 } else if (data.playerId === '2') {
                     window.game.player2Tilt = data.tilt;
+                    console.log(`🎮 Ustawiono player2Tilt na: ${data.tilt}`);
                 }
             }
 
@@ -372,6 +398,7 @@ class GameCommunication {
             if (tiltLiveDisplay) {
                 const tiltValue = data.tilt.toFixed(1);
                 tiltLiveDisplay.textContent = `Odchylenie: ${tiltValue}%`;
+                console.log(`📺 Zaktualizowano wyświetlanie dla gracza ${data.playerId}: ${tiltValue}%`);
 
                 // Dodaj kolorowanie w zależności od wartości
                 const absValue = Math.abs(data.tilt);
@@ -382,7 +409,11 @@ class GameCommunication {
                 } else {
                     tiltLiveDisplay.style.color = '#FF6B6B'; // Czerwony - duże odchylenie
                 }
+            } else {
+                console.warn(`⚠️ Nie znaleziono elementu player${data.playerId}TiltLive`);
             }
+        } else {
+            console.warn('⚠️ Nieprawidłowe dane gracza:', data);
         }
     }
 
@@ -400,108 +431,123 @@ class GameCommunication {
     }
 
     async initController() {
-        console.log(`🚀 INICJALIZACJA KONTROLERA - Gracz ${this.playerId}`);
-        console.log(`🌐 Host URL: ${this.hostUrl}`);
+        console.log('📱 INICJALIZACJA KONTROLERA - START');
+        console.log('🎮 Tryb kontrolera dla gracza:', this.playerId);
 
-        // AKTYWUJ BLOKADĘ WYGASZANIA EKRANU na samym początku
-        console.log('🔆 Aktywuję blokadę wygaszania ekranu...');
-        try {
-            await screenWakeLock.activate();
-            console.log('✅ Blokada wygaszania ekranu aktywna');
-        } catch (error) {
-            console.warn('⚠️ Nie udało się aktywować blokady wygaszania:', error);
+        // Aktywuj blokadę wygaszania ekranu
+        console.log('☀️ Aktywuję blokadę wygaszania ekranu...');
+        await screenWakeLock.activate();
+
+        // Inicjalizuj żyroskop
+        this.initGyroscope();
+
+        // Inicjalizuj P2P jako kontroler
+        if (window.p2pConnection && this.hostPeerId) {
+            await window.p2pConnection.initAsController(this.playerId, this.hostPeerId);
         }
 
-        // Pokaż ekran kontrolera
-        showScreen('controllerScreen');
-        document.getElementById('controllerTitle').textContent = `Kontroler - Gracz ${this.playerId}`;
+        // Aktualizuj tytuł strony
+        this.updateControllerTitle();
 
-        // NATYCHMIAST wyślij sygnał połączenia - nie czekaj na żyroskop
-        console.log(`📡 Wysyłam sygnał połączenia dla gracza ${this.playerId}...`);
+        // Wyślij informację o połączeniu
+        this.sendPlayerConnectMessage();
 
-        this.sendToHost('playerConnect', { playerId: this.playerId });
-        console.log(`✅ Sygnał połączenia wysłany!`);
-
-        // Inicjalizuj żyroskop w tle
-        try {
-            document.getElementById('gyroStatus').textContent = 'Requesting permissions...';
-            await gyroscope.requestPermission();
-
-            document.getElementById('gyroStatus').textContent = 'Starting gyroscope...';
-            gyroscope.startListening();
-
-            // Kalibracja po 1 sekundzie
-            setTimeout(() => {
-                gyroscope.calibrate();
-                document.getElementById('gyroStatus').textContent = 'Gyroscope ready!';
-                console.log(`Gracz ${this.playerId} - żyroskop gotowy`);
-            }, 1000);
-
-            // Rozpocznij wysyłanie danych
-            this.startSendingData();
-
-        } catch (error) {
-            document.getElementById('gyroStatus').textContent = `Error: ${error.message}`;
-            console.error('Błąd żyroskopu:', error);
-
-            // Nawet jeśli żyroskop nie działa, gracz jest już połączony
-            console.log(`Gracz ${this.playerId} połączony, ale żyroskop nie działa`);
-        }
-
-        // Wyświetl IP kontrolera na ekranie gry
-        const ipDisplay = document.getElementById('controllerIP');
-        if (ipDisplay) {
-            ipDisplay.textContent = `IP Kontrolera: ${this.getControllerIP()}`;
-        }
-
-        // Jeśli włączono P2P, spróbuj nawiązać połączenie P2P
-        if (this.p2pEnabled) {
-            this.initP2PConnection();
-        }
+        console.log('✅ INICJALIZACJA KONTROLERA - ZAKOŃCZONA');
     }
 
-    // Funkcja pomocnicza do pobierania IP kontrolera
-    getControllerIP() {
-        return this.controllerIP || 'Nieznane';
+    initGyroscope() {
+        console.log('🧭 Inicjalizacja żyroskopu...');
+
+        const gyroStatus = document.getElementById('gyroStatus');
+
+        if (!gyroscope.checkSupport()) {
+            console.error('❌ Żyroskop nie jest obsługiwany');
+            if (gyroStatus) {
+                gyroStatus.textContent = 'Żyroskop nie jest obsługiwany';
+                gyroStatus.style.color = '#ff6b6b';
+            }
+            return;
+        }
+
+        gyroscope.init()
+            .then(() => {
+                console.log('✅ Żyroskop zainicjalizowany');
+                if (gyroStatus) {
+                    gyroStatus.textContent = 'Żyroskop aktywny';
+                    gyroStatus.style.color = '#28a745';
+                }
+                this.startSendingData();
+            })
+            .catch((error) => {
+                console.error('❌ Błąd inicjalizacji żyroskopu:', error);
+                if (gyroStatus) {
+                    gyroStatus.textContent = 'Błąd żyroskopu - dotknij ekranu aby aktywować';
+                    gyroStatus.style.color = '#ffc107';
+                }
+
+                // Dodaj obsługę dotknięcia ekranu dla aktywacji żyroskopu
+                document.addEventListener('touchstart', () => {
+                    gyroscope.init()
+                        .then(() => {
+                            console.log('✅ Żyroskop aktywowany po dotknięciu');
+                            if (gyroStatus) {
+                                gyroStatus.textContent = 'Żyroskop aktywny';
+                                gyroStatus.style.color = '#28a745';
+                            }
+                            this.startSendingData();
+                        })
+                        .catch(console.error);
+                }, { once: true });
+            });
+    }
+
+    updateControllerTitle() {
+        const titleElement = document.getElementById('controllerTitle');
+        if (titleElement) {
+            titleElement.textContent = `Kontroler - Gracz ${this.playerId}`;
+        }
+
+        // Aktualizuj też tytuł dokumentu
+        document.title = `Pong - Kontroler Gracza ${this.playerId}`;
+    }
+
+    async fetchGameData() {
+        // Ta funkcja może być pusta lub usunięta, bo używamy P2P
+        // Pozostawiam ją dla kompatybilności
     }
 
     startSendingData() {
         console.log('🔄 ROZPOCZYNAM WYSYŁANIE DANYCH ŻYROSKOPU');
 
-        // Zwiększona częstotliwość wysyłania danych dla płynniejszego sterowania
         let lastSentTime = 0;
         const sendInterval = 50; // 50ms = 20 razy na sekundę
 
         gyroscope.onOrientationChange((orientation, tiltPercent) => {
             const now = Date.now();
 
-            // tiltPercent jest już w skali -100 do +100
-            // Ogranicz do zakresu -100 do +100 (dla pewności)
             const limitedTiltPercent = Math.max(-100, Math.min(100, tiltPercent));
 
-            // Ograniczenie częstotliwości wysyłania aby nie przeciążać serwera
             if (now - lastSentTime < sendInterval) {
                 return;
             }
             lastSentTime = now;
 
-            // Debug - loguj wysyłane dane CZĘŚCIEJ
+            // Debug - loguj wysyłane dane
             if (!this.lastSendLogTime || Date.now() - this.lastSendLogTime > 500) {
-                console.log('📡 WYSYŁAM DANE DO HOSTA:', {
+                console.log('📡 WYSYŁAM DANE:', {
                     playerId: this.playerId,
                     tiltPercent: limitedTiltPercent,
-                    url: `${this.hostUrl}/controller-data`
+                    p2pConnected: this.p2pConnected
                 });
                 this.lastSendLogTime = Date.now();
             }
 
-            // Aktualizuj wyświetlanie z lepszą precyzją
+            // Aktualizuj wyświetlanie
             const tiltDisplay = document.getElementById('tiltDisplay');
             if (tiltDisplay) {
                 tiltDisplay.textContent = `Pochylenie: ${limitedTiltPercent.toFixed(1)}%`;
             }
 
-            // Dodaj wizualny wskaźnik ruchu
             const indicator = document.getElementById('movementIndicator');
             if (indicator) {
                 const movement = Math.abs(limitedTiltPercent);
@@ -509,160 +555,44 @@ class GameCommunication {
                 indicator.style.backgroundColor = movement > 20 ? '#28a745' : '#ffc107';
             }
 
-            // Wyślij dane do hosta z wartością procentową
-            this.sendToHost('playerData', {
+            // Wyślij dane przez P2P
+            const data = {
+                type: 'playerData',
                 playerId: this.playerId,
-                tilt: parseFloat(limitedTiltPercent.toFixed(1)), // Wartość procentowa -100 do +100
+                tilt: parseFloat(limitedTiltPercent.toFixed(1)),
                 orientation: {
                     beta: parseFloat(orientation.beta.toFixed(1)),
                     gamma: parseFloat(orientation.gamma.toFixed(1))
                 },
                 timestamp: now
-            });
+            };
+
+            if (window.p2pConnection && this.p2pConnected) {
+                window.p2pConnection.sendToHost(data);
+            }
         });
 
         console.log('✅ Callback żyroskopu został zarejestrowany');
     }
 
-    sendToHost(type, data) {
-        // Wyślij dane do hosta przez HTTP zamiast localStorage
-        const payload = {
-            type,
-            data,
-            timestamp: Date.now(),
-            controllerId: this.playerId
-        };
-
-        if (this.isController) {
-            // Kontroler wysyła dane do hosta przez HTTP
-            this.sendHTTPRequest(payload);
-        } else {
-            // Host używa localStorage lokalnie
-            if (type === 'playerConnect') {
-                localStorage.setItem('playerConnect', JSON.stringify(data));
-            } else if (type === 'playerData') {
-                localStorage.setItem('playerData', JSON.stringify(data));
-            }
+    sendPlayerConnectMessage() {
+        if (window.p2pConnection && this.p2pConnected) {
+            window.p2pConnection.sendToHost({
+                type: 'playerConnect',
+                playerId: this.playerId,
+                timestamp: Date.now()
+            });
         }
     }
 
-    async sendHTTPRequest(payload) {
-        const maxRetries = 3;
-        let retryCount = 0;
+    updateConnectionStatus() {
+        console.log('🔄 Aktualizacja statusu połączenia P2P:', this.p2pConnected);
 
-        console.log(`🔄 PRÓBA WYSŁANIA HTTP (${retryCount + 1}/${maxRetries}):`, payload);
-        console.log(`🎯 URL docelowy: ${this.hostUrl}/controller-data`);
-
-        while (retryCount < maxRetries) {
-            try {
-                // Wyślij dane do hosta przez fetch
-                const hostUrl = this.hostUrl || window.location.origin;
-                console.log(`📤 Wysyłam fetch do: ${hostUrl}/controller-data (próba ${retryCount + 1})`);
-
-                const response = await fetch(`${hostUrl}/controller-data`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify(payload),
-                    timeout: 5000 // 5 sekund timeout
-                });
-
-                console.log(`📨 Odpowiedź serwera - status: ${response.status}`);
-
-                if (response.ok) {
-                    console.log('✅ Dane wysłane do hosta pomyślnie:', payload);
-                    return; // Sukces - wyjdź z pętli
-                } else {
-                    console.error(`❌ Błąd HTTP ${response.status}:`, await response.text());
-                    retryCount++;
-
-                    if (retryCount < maxRetries) {
-                        console.log(`🔄 Ponawiam próbę za 1 sekundę... (${retryCount}/${maxRetries})`);
-                        await new Promise(resolve => setTimeout(resolve, 1000));
-                    }
-                }
-
-            } catch (error) {
-                console.error(`❌ Błąd wysyłania danych (próba ${retryCount + 1}):`, error);
-                retryCount++;
-
-                if (retryCount < maxRetries) {
-                    console.log(`🔄 Ponawiam próbę za 1 sekundę... (${retryCount}/${maxRetries})`);
-                    await new Promise(resolve => setTimeout(resolve, 1000));
-                }
-            }
-        }
-
-        // Jeśli wszystkie próby zawiodły, użyj fallback localStorage
-        console.log('🔄 Wszystkie próby HTTP zawiodły, próba fallback przez localStorage...');
-        if (payload.type === 'playerConnect') {
-            localStorage.setItem('playerConnect', JSON.stringify(payload.data));
-            console.log('💾 Zapisano playerConnect w localStorage');
-        } else if (payload.type === 'playerData') {
-            localStorage.setItem('playerData', JSON.stringify(payload.data));
-        }
-    }
-
-    // Nowa metoda dla hosta do pobierania danych z serwera
-    async fetchGameData() {
-        if (!this.isHost) return;
-
-        try {
-            const response = await fetch('/game-data');
-            if (response.ok) {
-                const gameData = await response.json();
-
-                // Sprawdź, czy są jakieś zmiany w połączeniach graczy
-                let connectionChanged = false;
-
-                // Aktualizuj stan połączonych graczy
-                Object.keys(gameData.connectedPlayers).forEach(playerKey => {
-                    const playerId = playerKey.replace('player', '');
-                    const wasConnected = this.connectedPlayers[playerKey];
-                    const isConnected = gameData.connectedPlayers[playerKey];
-
-                    if (wasConnected !== isConnected) {
-                        connectionChanged = true;
-
-                        if (!wasConnected && isConnected) {
-                            console.log(`🎉 NOWE POŁĄCZENIE - Gracz ${playerId}!`);
-                            this.handlePlayerConnect(playerId);
-                        } else if (wasConnected && !isConnected) {
-                            console.log(`⚠️ Gracz ${playerId} rozłączył się!`);
-                        }
-                    }
-
-                    this.connectedPlayers[playerKey] = isConnected;
-                });
-
-                // Aktualizuj dane graczy (bez logowania)
-                Object.keys(gameData.playerData).forEach(playerKey => {
-                    const playerData = gameData.playerData[playerKey];
-                    if (playerData.tilt !== undefined) {
-                        this.playerData[playerKey] = playerData;
-
-                        // Przekaż dane do gry
-                        if (window.game) {
-                            const playerId = playerKey.replace('player', '');
-                            if (playerId === '1') {
-                                window.game.player1Tilt = playerData.tilt;
-                            } else if (playerId === '2') {
-                                window.game.player2Tilt = playerData.tilt;
-                            }
-                        }
-
-                        // Aktualizuj wyświetlanie odchylenia na żywo
-                        const playerId = playerKey.replace('player', '');
-                        this.handlePlayerData({
-                            playerId: playerId,
-                            tilt: playerData.tilt
-                        });
-                    }
-                });
-            }
-        } catch (error) {
-            console.error('Błąd pobierania danych gry:', error);
+        // Aktualizuj wyświetlanie statusu połączenia
+        const statusElement = document.getElementById('connectionStatus');
+        if (statusElement) {
+            statusElement.textContent = this.p2pConnected ? 'Połączony (P2P)' : 'Łączenie...';
+            statusElement.style.color = this.p2pConnected ? '#28a745' : '#ffc107';
         }
     }
 
@@ -670,12 +600,15 @@ class GameCommunication {
         if (this.isController) {
             gyroscope.stopListening();
 
-            // DEZAKTYWUJ BLOKADĘ WYGASZANIA EKRANU
             console.log('🌙 Dezaktywuję blokadę wygaszania ekranu...');
             screenWakeLock.deactivate();
         }
 
-        // Wyczyść localStorage
+        // Rozłącz P2P
+        if (window.p2pConnection) {
+            window.p2pConnection.disconnect();
+        }
+
         localStorage.removeItem('playerConnect');
         localStorage.removeItem('playerData');
     }
@@ -746,148 +679,10 @@ class GameCommunication {
             setTimeout(callback, 200);
         }
     }
-
-    initP2PConnection() {
-        console.log('🌐 INICJALIZACJA POŁĄCZENIA P2P - Gracz ' + this.playerId);
-        console.log('📡 Próba nawiązania bezpośredniego połączenia P2P z hostem...');
-
-        // Sprawdź, czy przeglądarka obsługuje WebRTC
-        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-            console.error('❌ WebRTC nie jest obsługiwane w tej przeglądarce - nie można nawiązać połączenia P2P');
-            return;
-        }
-
-        // Utwórz nowy obiekt RTCPeerConnection
-        this.peerConnection = new RTCPeerConnection({
-            iceServers: [
-                { urls: 'stun:stun.l.google.com:19302' }, // Publiczny serwer STUN od Google
-                { urls: 'stun:stun1.l.google.com:19302' },
-                { urls: 'stun:stun2.l.google.com:19302' },
-                { urls: 'stun:stun3.l.google.com:19302' }
-            ]
-        });
-
-        console.log('🔌 Połączenie P2P zostało zainicjowane - konfiguracja WebRTC zakończona');
-
-        // Rejestracja kandydatów ICE
-        this.peerConnection.onicecandidate = (event) => {
-            if (event.candidate) {
-                console.log('🧊 Nowy kandydat ICE znaleziony:', event.candidate.candidate.substr(0, 50) + '...');
-            }
-        };
-
-        // Obsługuje zdarzenie, gdy połączenie P2P zostanie nawiązane
-        this.peerConnection.oniceconnectionstatechange = () => {
-            const state = this.peerConnection.iceConnectionState;
-            console.log(`🔄 Stan połączenia P2P zmieniony: ${state} (Gracz ${this.playerId})`);
-
-            if (state === 'checking') {
-                console.log('🔎 Sprawdzanie możliwości nawiązania połączenia P2P...');
-            } else if (state === 'connected' || state === 'completed') {
-                console.log('✅ POŁĄCZENIE P2P NAWIĄZANE! Bezpośrednia komunikacja z hostem aktywna.');
-                console.log('📊 Komunikacja gry teraz działa w trybie P2P z mniejszym opóźnieniem.');
-                this.p2pConnected = true;
-
-                // Po nawiązaniu połączenia, wymień dane graczy przez P2P
-                this.exchangePlayerDataP2P();
-            } else if (state === 'disconnected' || state === 'failed') {
-                console.log('❌ Połączenie P2P utracone - powrót do standardowej komunikacji');
-                this.p2pConnected = false;
-
-                // Spróbuj ponownie nawiązać połączenie P2P
-                setTimeout(() => {
-                    console.log('🔄 Automatyczna próba ponownego nawiązania połączenia P2P...');
-                    this.reconnectP2P();
-                }, 3000);
-            }
-        };
-
-        // Obsługuje zdarzenie błędu ICE
-        this.peerConnection.onicecandidateerror = (error) => {
-            console.error('❌ Błąd kandydata ICE:', error);
-        };
-
-        // Rozpocznij proces wymiany ofert i odpowiedzi
-        this.createOffer();
-    }
-
-    createOffer() {
-        console.log('📞 Tworzenie oferty połączenia P2P...');
-
-        this.peerConnection.createOffer()
-            .then(offer => {
-                console.log('📄 Oferta połączenia P2P utworzona:', offer);
-
-                // Ustaw lokalną ofertę
-                return this.peerConnection.setLocalDescription(offer);
-            })
-            .then(() => {
-                console.log('✅ Lokalna oferta ustawiona, wysyłanie do drugiego gracza...');
-
-                // Wyślij ofertę do drugiego gracza przez hosta
-                this.sendToHost('p2pOffer', {
-                    playerId: this.playerId,
-                    sdp: this.peerConnection.localDescription
-                });
-            })
-            .catch(error => {
-                console.error('❌ Błąd podczas tworzenia oferty P2P:', error);
-            });
-    }
-
-    handleP2PAnswer(answer) {
-        console.log('📩 Otrzymano odpowiedź na ofertę P2P:', answer);
-
-        // Ustaw zdalny opis połączenia
-        this.peerConnection.setRemoteDescription(new RTCSessionDescription(answer))
-            .then(() => {
-                console.log('✅ Zdalny opis połączenia P2P ustawiony');
-            })
-            .catch(error => {
-                console.error('❌ Błąd podczas ustawiania zdalnego opisu połączenia P2P:', error);
-            });
-    }
-
-    addIceCandidate(candidate) {
-        console.log('➕ Dodawanie kandydata ICE:', candidate);
-
-        // Dodaj kandyta ICE do połączenia
-        this.peerConnection.addIceCandidate(new RTCIceCandidate(candidate))
-            .then(() => {
-                console.log('✅ Kandydat ICE dodany');
-            })
-            .catch(error => {
-                console.error('❌ Błąd podczas dodawania kandydata ICE:', error);
-            });
-    }
-
-    exchangePlayerDataP2P() {
-        console.log('🔄 Wymiana danych graczy przez P2P');
-
-        // Wyślij aktualne dane graczy przez P2P
-        Object.keys(this.playerData).forEach(playerKey => {
-            const playerId = playerKey.replace('player', '');
-            const tiltValue = this.playerData[playerKey].tilt;
-
-            // Przekaż dane o pochyleniu gracza przez P2P
-            this.sendToHost('playerDataP2P', {
-                playerId: playerId,
-                tilt: tiltValue
-            });
-        });
-    }
-
-    reconnectP2P() {
-        console.log('🔄 Próba ponownego nawiązania połączenia P2P...');
-
-        // Zresetuj połączenie P2P
-        this.peerConnection.close();
-        this.p2pConnected = false;
-
-        // Spróbuj ponownie nawiązać połączenie P2P
-        this.initP2PConnection();
-    }
 }
 
 // Globalna instancja komunikacji
 const gameComm = new GameCommunication();
+
+// Udostępnij globalnie w window
+window.gameComm = gameComm;

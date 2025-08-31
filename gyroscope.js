@@ -6,16 +6,35 @@ class GyroscopeController {
         this.callbacks = [];
         this.calibrationOffset = 0;
         this.isCalibrated = false;
+        this.isListening = false;
+        this.orientationHandler = null;
 
         this.checkSupport();
     }
 
     checkSupport() {
         this.isSupported = 'DeviceOrientationEvent' in window;
+        console.log('🧭 Sprawdzanie obsługi żyroskopu:', this.isSupported);
         return this.isSupported;
     }
 
+    async init() {
+        console.log('🔧 Inicjalizacja żyroskopu...');
+
+        if (!this.isSupported) {
+            throw new Error('Żyroskop nie jest obsługiwany na tym urządzeniu');
+        }
+
+        await this.requestPermission();
+        this.startListening();
+
+        console.log('✅ Żyroskop zainicjalizowany pomyślnie');
+        return true;
+    }
+
     async requestPermission() {
+        console.log('🔐 Żądanie uprawnień do żyroskopu...');
+
         if (!this.isSupported) {
             throw new Error('Żyroskop nie jest obsługiwany na tym urządzeniu');
         }
@@ -29,12 +48,16 @@ class GyroscopeController {
                 if (!this.isPermissionGranted) {
                     throw new Error('Brak uprawnień do żyroskopu');
                 }
+
+                console.log('✅ Uprawnienia do żyroskopu uzyskane');
             } catch (error) {
+                console.error('❌ Bł��d uprawnień żyroskopu:', error);
                 throw new Error('Nie udało się uzyskać uprawnień do żyroskopu');
             }
         } else {
             // Android i starsze wersje iOS
             this.isPermissionGranted = true;
+            console.log('✅ Uprawnienia do żyroskopu (automatyczne)');
         }
 
         return this.isPermissionGranted;
@@ -45,76 +68,106 @@ class GyroscopeController {
             throw new Error('Żyroskop nie jest dostępny');
         }
 
+        if (this.isListening) {
+            console.log('⚠️ Żyroskop już nasłuchuje');
+            return;
+        }
+
+        console.log('👂 Rozpoczynam nasłuchiwanie żyroskopu...');
+
         // Zapisz referencję do funkcji obsługi dla późniejszego usunięcia
         this.orientationHandler = (event) => {
             this.orientation.beta = event.beta || 0;  // Obrót w przód/tył (-180 do 180)
             this.orientation.gamma = event.gamma || 0; // Obrót w lewo/prawo (-90 do 90)
 
-            // Debug - loguj pierwsze 5 sekund
-            if (!this.lastLogTime || Date.now() - this.lastLogTime > 1000) {
-                console.log('🔄 Dane żyroskopu:', {
-                    beta: this.orientation.beta.toFixed(1),
-                    gamma: this.orientation.gamma.toFixed(1),
-                    tilt: this.getVerticalTilt().toFixed(3)
-                });
-                this.lastLogTime = Date.now();
-            }
+            // Oblicz pochylenie w procentach (-100% do +100%)
+            // gamma: -90 (maksymalnie w lewo) do +90 (maksymalnie w prawo)
+            let tiltPercent = (this.orientation.gamma / 90) * 100;
 
-            this.notifyCallbacks();
+            // Ogranicz do zakresu -100 do +100
+            tiltPercent = Math.max(-100, Math.min(100, tiltPercent));
+
+            // Wywołaj wszystkie zarejestrowane callbacki
+            this.callbacks.forEach(callback => {
+                try {
+                    callback(this.orientation, tiltPercent);
+                } catch (error) {
+                    console.error('❌ Błąd w callback żyroskopu:', error);
+                }
+            });
         };
 
-        window.addEventListener('deviceorientation', this.orientationHandler);
-        console.log('👂 Żyroskop rozpoczął nasłuchiwanie zdarzeń deviceorientation');
+        window.addEventListener('deviceorientation', this.orientationHandler, true);
+        this.isListening = true;
+
+        console.log('✅ Żyroskop nasłuchuje');
     }
 
     stopListening() {
+        if (!this.isListening) {
+            return;
+        }
+
+        console.log('🔇 Zatrzymywanie nasłuchiwania żyroskopu...');
+
         if (this.orientationHandler) {
-            window.removeEventListener('deviceorientation', this.orientationHandler);
+            window.removeEventListener('deviceorientation', this.orientationHandler, true);
             this.orientationHandler = null;
-            console.log('🛑 Żyroskop zatrzymał nasłuchiwanie');
+        }
+
+        this.isListening = false;
+        console.log('✅ Żyroskop zatrzymany');
+    }
+
+    onOrientationChange(callback) {
+        if (typeof callback !== 'function') {
+            throw new Error('Callback musi być funkcją');
+        }
+
+        this.callbacks.push(callback);
+        console.log(`📋 Zarejestrowano callback żyroskopu (łącznie: ${this.callbacks.length})`);
+    }
+
+    removeCallback(callback) {
+        const index = this.callbacks.indexOf(callback);
+        if (index > -1) {
+            this.callbacks.splice(index, 1);
+            console.log(`🗑️ Usunięto callback żyroskopu (pozostało: ${this.callbacks.length})`);
         }
     }
 
     calibrate() {
-        // Kalibracja dla osi gamma (lewo/prawo)
-        this.calibrationOffset = this.orientation.gamma;
-        this.isCalibrated = true;
-        console.log('🎯 Kalibracja żyroskopu dla osi gamma:', this.calibrationOffset.toFixed(1) + '°');
-    }
-
-    getVerticalTilt() {
-        if (!this.isCalibrated) {
-            return 0;
+        if (!this.isListening) {
+            console.warn('⚠️ Żyroskop nie nasłuchuje - nie można kalibrować');
+            return;
         }
 
-        // Używamy tylko osi gamma (lewo/prawo) do sterowania paletką
-        // gamma: -90° do +90° (lewo do prawo)
-        // Pochylenie w lewo (ujemne gamma) = paletka na dole (-100%)
-        // Pochylenie w prawo (dodatnie gamma) = paletka na górze (+100%)
-        const gammaChange = this.orientation.gamma - this.calibrationOffset;
-
-        // Mapuj zakres ±45° na -100 do +100 (skala procentowa)
-        const tiltPercent = (gammaChange / 45) * 100;
-
-        // Ogranicz do zakresu -100 do +100
-        return Math.max(-100, Math.min(100, tiltPercent));
+        this.calibrationOffset = this.orientation.gamma;
+        this.isCalibrated = true;
+        console.log(`🎯 Żyroskop skalibrowany (offset: ${this.calibrationOffset.toFixed(2)}°)`);
     }
 
-    onOrientationChange(callback) {
-        this.callbacks.push(callback);
+    getCalibratedGamma() {
+        if (!this.isCalibrated) {
+            return this.orientation.gamma;
+        }
+        return this.orientation.gamma - this.calibrationOffset;
     }
 
-    notifyCallbacks() {
-        this.callbacks.forEach(callback => {
-            callback(this.orientation, this.getVerticalTilt());
-        });
-    }
-
-    // Metoda do debugowania
-    getOrientationString() {
-        return `Beta: ${this.orientation.beta.toFixed(1)}°, Gamma: ${this.orientation.gamma.toFixed(1)}°, Tilt: ${this.getVerticalTilt().toFixed(2)}`;
+    getStatus() {
+        return {
+            isSupported: this.isSupported,
+            isPermissionGranted: this.isPermissionGranted,
+            isListening: this.isListening,
+            isCalibrated: this.isCalibrated,
+            orientation: this.orientation,
+            callbacksCount: this.callbacks.length
+        };
     }
 }
 
-// Globalna instancja kontrolera żyroskopu
+// Globalna instancja żyroskopu
 const gyroscope = new GyroscopeController();
+
+// Debug - loguj status żyroskopu
+console.log('🧭 Gyroscope controller loaded:', gyroscope.getStatus());

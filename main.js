@@ -12,11 +12,22 @@ function showScreen(screenId) {
 
 // Inicjalizacja po załadowaniu strony - tylko dla gry/hosta
 document.addEventListener('DOMContentLoaded', async function() {
-    console.log('Host DOMContentLoaded - automatyczna inicjalizacja jako host');
+    console.log('🎮 DOMContentLoaded - sprawdzanie trybu aplikacji');
+
+    // Sprawdź czy to kontroler czy host
+    const urlParams = new URLSearchParams(window.location.search);
+    const isController = urlParams.has('player');
+
+    if (isController) {
+        console.log('📱 Tryb kontrolera - nie inicjalizuję hosta');
+        return; // GameCommunication zajmie się kontrolerem
+    }
+
+    console.log('🖥️ Tryb hosta - automatyczna inicjalizacja');
 
     // Sprawdzenie obsługi żyroskopu
     if (!gyroscope.checkSupport()) {
-        console.warn('Żyroskop nie jest obsługiwany. Kontrolery mogą nie działać poprawnie.');
+        console.warn('⚠️ Żyroskop nie jest obsługiwany. Kontrolery mogą nie działać poprawnie.');
     }
 
     // Automatycznie rozpocznij jako host
@@ -26,9 +37,9 @@ document.addEventListener('DOMContentLoaded', async function() {
     const pauseBtn = document.getElementById('pauseBtn');
     if (pauseBtn) {
         pauseBtn.addEventListener('click', function() {
-            if (game) {
-                game.pause();
-                this.textContent = game.isPaused ? 'Wznów' : 'Pauza';
+            if (window.game) {
+                window.game.pause();
+                this.textContent = window.game.isPaused ? 'Wznów' : 'Pauza';
             }
         });
     }
@@ -36,8 +47,8 @@ document.addEventListener('DOMContentLoaded', async function() {
     const backToMenuBtn = document.getElementById('backToMenuBtn');
     if (backToMenuBtn) {
         backToMenuBtn.addEventListener('click', function() {
-            if (game) {
-                game.stop();
+            if (window.game) {
+                window.game.stop();
             }
             resetGame();
             showScreen('qrScreen');
@@ -60,145 +71,127 @@ document.addEventListener('DOMContentLoaded', async function() {
             showScreen('qrScreen');
         });
     }
-
-    // Zapobieganie przewijaniu na urządzeniach mobilnych
-    document.addEventListener('touchmove', function(e) {
-        e.preventDefault();
-    }, { passive: false });
-
-    // Ukrycie paska adresu na mobilnych
-    window.addEventListener('load', function() {
-        setTimeout(function() {
-            window.scrollTo(0, 1);
-        }, 0);
-    });
 });
 
+// Funkcja do rozpoczęcia gry jako host
 async function startAsHost() {
+    console.log('🏠 Rozpoczynam jako host');
+
     try {
-        // Inicjalizuj jako host
+        // Inicjalizuj komunikację jako host
         await gameComm.initHost();
 
-        // Pokaż ekran z kodami QR
+        // Generuj QR kody z opóźnieniem, aby P2P było gotowe
+        setTimeout(async () => {
+            await gameComm.generateQRCodes();
+        }, 1000);
+
+        // Pokaż ekran QR
         showScreen('qrScreen');
 
-        // Ustaw początkowe statusy
-        document.getElementById('status1').textContent = 'Oczekiwanie...';
-        document.getElementById('status1').className = 'player-status waiting';
-        document.getElementById('status2').textContent = 'Oczekiwanie...';
-        document.getElementById('status2').className = 'player-status waiting';
-
-        console.log('Host zainicjalizowany, wyświetlono kody QR');
-
+        console.log('✅ Host zainicjalizowany pomyślnie');
     } catch (error) {
-        alert(`Błąd inicjalizacji hosta: ${error.message}`);
-        console.error('Błąd hosta:', error);
+        console.error('❌ Błąd inicjalizacji hosta:', error);
     }
 }
 
-function startGameFromQR() {
-    // Sprawdź czy obaj gracze są połączeni
-    if (!gameComm.connectedPlayers.player1 || !gameComm.connectedPlayers.player2) {
-        alert('Nie wszyscy gracze są połączeni!');
-        return;
-    }
-
-    // Inicjalizacja canvas i gry
-    const canvas = document.getElementById('gameCanvas');
-
-    // Dostosowanie rozmiaru canvas do ekranu
-    const containerWidth = Math.min(window.innerWidth * 0.9, 800);
-    const containerHeight = Math.min(window.innerHeight * 0.6, 400);
-
-    canvas.width = containerWidth;
-    canvas.height = containerHeight;
-    canvas.style.width = containerWidth + 'px';
-    canvas.style.height = containerHeight + 'px';
-
-    // Tworzenie nowej instancji gry
-    game = new PongGame(canvas);
-
-    // Ustaw źródło danych dla gry (z komunikacji zamiast bezpośrednio z żyroskopu)
-    game.getPlayerTilts = function() {
-        return {
-            player1: gameComm.playerData.player1.tilt,
-            player2: gameComm.playerData.player2.tilt
-        };
-    };
-
-    game.reset();
-    game.start();
-
-    // Przejście do ekranu gry
-    showScreen('gameScreen');
-
-    // Aktualizuj odchylenie Gracza 1 i Gracza 2 na ekranie gry
-    setInterval(() => {
-        const player1TiltElement = document.getElementById('gamePlayer1Tilt');
-        const player2TiltElement = document.getElementById('gamePlayer2Tilt');
-
-        if (player1TiltElement) {
-            const tilt1 = gameComm.playerData.player1.tilt || 0;
-            player1TiltElement.textContent = `${(tilt1 * 45).toFixed(1)}°`;
-        }
-
-        if (player2TiltElement) {
-            const tilt2 = gameComm.playerData.player2.tilt || 0;
-            player2TiltElement.textContent = `${(tilt2 * 45).toFixed(1)}°`;
-        }
-    }, 100);
-
-    console.log('Gra rozpoczęta z kontrolerami QR!');
-}
-
+// Funkcja do resetowania gry
 function resetGame() {
-    // Reset zmiennych globalnych
-    currentPlayer = null;
-    playersReady = { player1: false, player2: false };
+    console.log('🔄 Resetowanie gry');
 
-    // Reset przycisku pauzy
-    document.getElementById('pauseBtn').textContent = 'Pauza';
-
-    // Rozłącz komunikację
-    if (gameComm) {
-        gameComm.disconnect();
+    // Zatrzymaj grę jeśli działa
+    if (window.game) {
+        window.game.stop();
+        window.game = null;
     }
 
-    if (game) {
-        game.stop();
-        game = null;
+    // Zresetuj status graczy
+    gameComm.connectedPlayers = { player1: false, player2: false };
+    gameComm.playerData = { player1: { tilt: 0 }, player2: { tilt: 0 } };
+
+    // Zresetuj wyświetlanie statusu graczy
+    const status1 = document.getElementById('status1');
+    const status2 = document.getElementById('status2');
+
+    if (status1) {
+        status1.textContent = 'Oczekiwanie...';
+        status1.className = 'player-status';
+    }
+
+    if (status2) {
+        status2.textContent = 'Oczekiwanie...';
+        status2.className = 'player-status';
+    }
+
+    // Przywróć QR kody
+    const qrSections = document.querySelectorAll('.qr-section');
+    qrSections.forEach(section => {
+        // Usuń komunikaty o połączeniu
+        const connectedMsg = section.querySelector('.connected-message');
+        if (connectedMsg) {
+            connectedMsg.remove();
+        }
+
+        // Przywróć canvas QR
+        const canvas = section.querySelector('canvas');
+        if (canvas) {
+            canvas.style.display = 'block';
+        }
+
+        // Przywróć alternatywne QR
+        const googleQr = section.querySelector('.google-qr');
+        if (googleQr) {
+            googleQr.style.display = 'block';
+        }
+
+        // Przywróć linki tekstowe
+        const textLink = section.querySelector('.text-link');
+        if (textLink) {
+            textLink.style.display = 'block';
+        }
+    });
+
+    // Wygeneruj nowe QR kody z nowym Peer ID
+    if (window.p2pConnection && window.p2pConnection.isHost) {
+        // Zamknij stare połączenie i utwórz nowe
+        window.p2pConnection.disconnect();
+        setTimeout(async () => {
+            await window.p2pConnection.initAsHost();
+            setTimeout(async () => {
+                await gameComm.generateQRCodes();
+            }, 1000);
+        }, 1000);
     }
 }
 
-// Obsługa zmiany orientacji ekranu
-window.addEventListener('orientationchange', function() {
-    setTimeout(function() {
-        if (game) {
-            const canvas = document.getElementById('gameCanvas');
-            const containerWidth = Math.min(window.innerWidth * 0.9, 800);
-            const containerHeight = Math.min(window.innerHeight * 0.6, 400);
+// Funkcja do obsługi końca gry
+function handleGameOver(winner, player1Score, player2Score) {
+    console.log(`🏆 Koniec gry! Zwycięzca: ${winner}`);
 
-            canvas.width = containerWidth;
-            canvas.height = containerHeight;
-            canvas.style.width = containerWidth + 'px';
-            canvas.style.height = containerHeight + 'px';
-
-            // Ponowna inicjalizacja gry z nowymi wymiarami
-            game.width = containerWidth;
-            game.height = containerHeight;
-            game.resetPaddles();
-        }
-    }, 100);
-});
-
-// Obsługa wyjścia z aplikacji
-window.addEventListener('beforeunload', function() {
-    if (gameComm) {
-        gameComm.disconnect();
+    // Aktualizuj tekst zwycięzcy
+    const winnerText = document.getElementById('winnerText');
+    if (winnerText) {
+        winnerText.textContent = `${winner} wygrywa!`;
     }
-});
 
-// Eksportowanie do globalnego zasięgu dla debugowania
-window.gameComm = gameComm;
-window.currentPlayer = currentPlayer;
-window.game = game;
+    // Aktualizuj końcowe wyniki
+    const finalPlayer1Score = document.getElementById('finalPlayer1Score');
+    const finalPlayer2Score = document.getElementById('finalPlayer2Score');
+
+    if (finalPlayer1Score) {
+        finalPlayer1Score.textContent = player1Score;
+    }
+
+    if (finalPlayer2Score) {
+        finalPlayer2Score.textContent = player2Score;
+    }
+
+    // Pokaż ekran końca gry
+    showScreen('gameOverScreen');
+}
+
+// Ekspozycja funkcji do użycia przez inne skrypty
+window.showScreen = showScreen;
+window.startAsHost = startAsHost;
+window.resetGame = resetGame;
+window.handleGameOver = handleGameOver;

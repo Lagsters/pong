@@ -1,280 +1,349 @@
-// P2P - bezpośrednia komunikacja między kontrolerem a grą
+// P2P - komunikacja bezpośrednia między kontrolerem a grą używając PeerJS
 class PeerToPeerConnection {
     constructor() {
         this.isHost = false;
         this.isController = false;
         this.playerId = null;
-        this.peerConnection = null;
-        this.dataChannel = null;
-        this.remoteDataChannel = null;
+        this.peer = null;
+        this.connections = new Map(); // Map playerId -> connection
         this.connected = false;
-        this.pendingCandidates = [];
-        this.iceCandidateTimeout = null;
-        
-        console.log('🔰 PeerToPeerConnection zainicjalizowany');
+        this.hostPeerId = null;
+        this.connectionToHost = null;
+
+        console.log('🔰 PeerToPeerConnection z PeerJS zainicjalizowany');
+
+        // Sprawdź czy PeerJS jest dostępne
+        if (typeof Peer === 'undefined') {
+            console.error('❌ PeerJS nie jest załadowane!');
+            return;
+        }
     }
 
     // Inicjalizacja jako host (gra)
-    async initAsHost(playerId) {
-        console.log(`🖥️ Inicjalizacja P2P jako host dla gracza ${playerId}`);
+    async initAsHost() {
+        console.log('🖥️ Inicjalizacja P2P jako host');
         this.isHost = true;
-        this.playerId = playerId;
-        
-        // Konfiguracja STUN serwerów dla WebRTC
-        const configuration = {
-            iceServers: [
-                { urls: 'stun:stun.l.google.com:19302' },
-                { urls: 'stun:stun1.l.google.com:19302' },
-                { urls: 'stun:stun2.l.google.com:19302' }
-            ]
-        };
-        
-        // Tworzenie połączenia peer
-        this.peerConnection = new RTCPeerConnection(configuration);
-        
-        // Tworzenie kanału danych
-        this.dataChannel = this.peerConnection.createDataChannel(`player${playerId}`);
-        this.setupDataChannel(this.dataChannel);
-        
-        // Nasłuchiwanie na kanały danych od kontrolera
-        this.peerConnection.ondatachannel = (event) => {
-            console.log(`📡 Host otrzymał kanał danych od kontrolera (gracz ${playerId})`);
-            this.remoteDataChannel = event.channel;
-            this.setupDataChannel(this.remoteDataChannel);
-        };
-        
-        // Tworzenie oferty połączenia
-        const offer = await this.peerConnection.createOffer();
-        await this.peerConnection.setLocalDescription(offer);
-        
-        // Nasłuchiwanie na kandydatów ICE
-        this.peerConnection.onicecandidate = (event) => {
-            if (event.candidate) {
-                console.log(`🧊 Nowy kandydat ICE dla hosta (gracz ${playerId})`, event.candidate);
-                this.pendingCandidates.push(event.candidate);
-                
-                // Resetowanie timera
-                if (this.iceCandidateTimeout) {
-                    clearTimeout(this.iceCandidateTimeout);
+
+        try {
+            // Utwórz peer z unikalnym ID
+            this.peer = new Peer(`pong-host-${Date.now()}`, {
+                debug: 2,
+                config: {
+                    iceServers: [
+                        { urls: 'stun:stun.l.google.com:19302' },
+                        { urls: 'stun:stun1.l.google.com:19302' }
+                    ]
                 }
-                
-                // Ustawienie timera na zebranie wszystkich kandydatów
-                this.iceCandidateTimeout = setTimeout(() => {
-                    console.log(`⏱️ Timeout ICE - zebrano ${this.pendingCandidates.length} kandydatów`);
-                    // Wygeneruj kompletne dane połączenia
-                    this.generateConnectionData();
-                }, 2000);
-            }
-        };
-        
-        // Stan połączenia
-        this.peerConnection.onconnectionstatechange = () => {
-            console.log(`🔄 Stan połączenia P2P (host): ${this.peerConnection.connectionState}`);
-            if (this.peerConnection.connectionState === 'connected') {
-                this.connected = true;
-                console.log(`✅ Połączenie P2P nawiązane dla gracza ${playerId}!`);
-            }
-        };
-        
-        return offer;
+            });
+
+            this.peer.on('open', (id) => {
+                console.log('✅ Host peer ID:', id);
+                this.hostPeerId = id;
+                this.displayPeerID(id);
+            });
+
+            this.peer.on('connection', (conn) => {
+                console.log('📥 Nowe połączenie od:', conn.peer);
+                this.handleIncomingConnection(conn);
+            });
+
+            this.peer.on('error', (err) => {
+                console.error('❌ Błąd peer:', err);
+            });
+
+        } catch (error) {
+            console.error('❌ Błąd inicjalizacji hosta:', error);
+        }
     }
-    
+
     // Inicjalizacja jako kontroler
-    async initAsController(playerId, connectionData) {
+    async initAsController(playerId, hostPeerId) {
         console.log(`📱 Inicjalizacja P2P jako kontroler dla gracza ${playerId}`);
         this.isController = true;
         this.playerId = playerId;
-        
-        // Konfiguracja STUN serwerów dla WebRTC
-        const configuration = {
-            iceServers: [
-                { urls: 'stun:stun.l.google.com:19302' },
-                { urls: 'stun:stun1.l.google.com:19302' },
-                { urls: 'stun:stun2.l.google.com:19302' }
-            ]
-        };
-        
-        // Tworzenie połączenia peer
-        this.peerConnection = new RTCPeerConnection(configuration);
-        
-        // Tworzenie kanału danych
-        this.dataChannel = this.peerConnection.createDataChannel(`controller${playerId}`);
-        this.setupDataChannel(this.dataChannel);
-        
-        // Nasłuchiwanie na kanały danych od hosta
-        this.peerConnection.ondatachannel = (event) => {
-            console.log(`📡 Kontroler otrzymał kanał danych od hosta`);
-            this.remoteDataChannel = event.channel;
-            this.setupDataChannel(this.remoteDataChannel);
-        };
-        
+        this.hostPeerId = hostPeerId;
+
         try {
-            // Parsowanie danych połączenia
-            const { offer, candidates } = connectionData;
-            
-            // Ustawienie zdalnego opisu
-            await this.peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
-            
-            // Dodanie wszystkich kandydatów ICE
-            for (const candidate of candidates) {
-                await this.peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
-            }
-            
-            // Tworzenie odpowiedzi
-            const answer = await this.peerConnection.createAnswer();
-            await this.peerConnection.setLocalDescription(answer);
-            
-            // Nasłuchiwanie na kandydatów ICE
-            this.peerConnection.onicecandidate = (event) => {
-                if (event.candidate) {
-                    console.log(`🧊 Nowy kandydat ICE dla kontrolera (gracz ${playerId})`, event.candidate);
-                    this.pendingCandidates.push(event.candidate);
+            // Utwórz peer dla kontrolera
+            this.peer = new Peer(`controller-${playerId}-${Date.now()}`, {
+                debug: 2,
+                config: {
+                    iceServers: [
+                        { urls: 'stun:stun.l.google.com:19302' },
+                        { urls: 'stun:stun1.l.google.com:19302' }
+                    ]
                 }
-            };
-            
-            // Stan połączenia
-            this.peerConnection.onconnectionstatechange = () => {
-                console.log(`🔄 Stan połączenia P2P (kontroler): ${this.peerConnection.connectionState}`);
-                if (this.peerConnection.connectionState === 'connected') {
-                    this.connected = true;
-                    console.log(`✅ Połączenie P2P nawiązane z hostem!`);
-                    
-                    // Wyślij potwierdzenie połączenia
-                    this.sendData({
-                        type: 'connection_established',
-                        playerId: this.playerId,
-                        timestamp: Date.now()
-                    });
-                }
-            };
-            
-            return answer;
+            });
+
+            this.peer.on('open', (id) => {
+                console.log('✅ Kontroler peer ID:', id);
+                this.connectToHost();
+            });
+
+            this.peer.on('error', (err) => {
+                console.error('❌ Błąd peer kontrolera:', err);
+            });
+
         } catch (error) {
-            console.error('⚠️ Błąd podczas inicjalizacji P2P jako kontroler:', error);
-            throw error;
+            console.error('❌ Błąd inicjalizacji kontrolera:', error);
         }
     }
-    
-    // Konfiguracja kanału danych
-    setupDataChannel(channel) {
-        channel.onopen = () => {
-            console.log(`🟢 Kanał danych otwarty: ${channel.label}`);
-        };
-        
-        channel.onclose = () => {
-            console.log(`🔴 Kanał danych zamknięty: ${channel.label}`);
-        };
-        
-        channel.onerror = (error) => {
-            console.error(`⚠️ Błąd kanału danych: ${channel.label}`, error);
-        };
-        
-        channel.onmessage = (event) => {
-            try {
-                const data = JSON.parse(event.data);
-                this.handleMessage(data);
-            } catch (error) {
-                console.error('⚠️ Błąd parsowania wiadomości P2P:', error);
+
+    // Połącz się z hostem
+    connectToHost() {
+        if (!this.hostPeerId) {
+            console.error('❌ Brak ID hosta');
+            return;
+        }
+
+        console.log(`🔗 Łączenie z hostem: ${this.hostPeerId}`);
+
+        this.connectionToHost = this.peer.connect(this.hostPeerId, {
+            metadata: { playerId: this.playerId }
+        });
+
+        this.connectionToHost.on('open', () => {
+            console.log('✅ Połączono z hostem');
+            this.connected = true;
+            this.onConnectionOpen();
+        });
+
+        this.connectionToHost.on('data', (data) => {
+            this.handleDataFromHost(data);
+        });
+
+        this.connectionToHost.on('close', () => {
+            console.log('🔌 Połączenie z hostem zamknięte');
+            this.connected = false;
+            this.onConnectionClose();
+        });
+
+        this.connectionToHost.on('error', (err) => {
+            console.error('❌ Błąd połączenia z hostem:', err);
+        });
+    }
+
+    // Obsługa przychodzącego połączenia (host)
+    handleIncomingConnection(conn) {
+        const playerId = conn.metadata?.playerId;
+
+        if (!playerId) {
+            console.error('❌ Brak playerId w metadanych');
+            conn.close();
+            return;
+        }
+
+        console.log(`📥 Akceptuję połączenie od gracza: ${playerId}`);
+        this.connections.set(playerId, conn);
+
+        conn.on('open', () => {
+            console.log(`✅ Połączenie z graczem ${playerId} otwarte`);
+            this.onPlayerConnected(playerId);
+        });
+
+        conn.on('data', (data) => {
+            this.handleDataFromPlayer(playerId, data);
+        });
+
+        conn.on('close', () => {
+            console.log(`🔌 Gracz ${playerId} rozłączony`);
+            this.connections.delete(playerId);
+            this.onPlayerDisconnected(playerId);
+        });
+
+        conn.on('error', (err) => {
+            console.error(`❌ Błąd połączenia z graczem ${playerId}:`, err);
+        });
+    }
+
+    // Wyślij dane do hosta (kontroler)
+    sendToHost(data) {
+        if (this.connectionToHost && this.connected) {
+            this.connectionToHost.send(data);
+        } else {
+            console.warn('⚠️ Brak połączenia z hostem');
+        }
+    }
+
+    // Wyślij dane do gracza (host)
+    sendToPlayer(playerId, data) {
+        const conn = this.connections.get(playerId);
+        if (conn) {
+            conn.send(data);
+        } else {
+            console.warn(`⚠️ Brak połączenia z graczem ${playerId}`);
+        }
+    }
+
+    // Wyślij dane do wszystkich graczy (host)
+    broadcast(data) {
+        this.connections.forEach((conn, playerId) => {
+            conn.send(data);
+        });
+    }
+
+    // Obsługa danych od gracza (host)
+    handleDataFromPlayer(playerId, data) {
+        console.log(`📥 Dane od gracza ${playerId}:`, data);
+
+        // Przekaż dane do communication.js
+        if (window.gameComm && typeof window.gameComm.handlePlayerData === 'function') {
+            // Konwertuj dane do formatu oczekiwanego przez handlePlayerData
+            if (data.type === 'playerData') {
+                // Konwertuj playerId z "player2" na "2"
+                const playerNumber = data.playerId.replace('player', '');
+
+                window.gameComm.handlePlayerData({
+                    playerId: playerNumber, // "2" zamiast "player2"
+                    tilt: data.tilt,
+                    orientation: data.orientation,
+                    timestamp: data.timestamp
+                });
             }
-        };
-    }
-    
-    // Obsługa wiadomości
-    handleMessage(data) {
-        console.log(`📨 Otrzymano wiadomość P2P:`, data);
-        
-        // Przesłanie wiadomości do zarejestrowanych callbacków
-        if (this.messageCallback) {
-            this.messageCallback(data);
         }
-        
-        // Obsługa specjalnych typów wiadomości
-        if (data.type === 'connection_established') {
-            console.log(`🎉 Potwierdzenie połączenia P2P od gracza ${data.playerId}`);
-            if (this.connectionCallback) {
-                this.connectionCallback(data.playerId);
+
+        // Przekaż także do gry jeśli istnieje
+        if (window.game) {
+            const playerNumber = data.playerId.replace('player', '');
+            if (playerNumber === '1') {
+                window.game.player1Tilt = data.tilt;
+            } else if (playerNumber === '2') {
+                window.game.player2Tilt = data.tilt;
             }
         }
     }
-    
-    // Rejestracja callbacków dla wiadomości
-    onMessage(callback) {
-        this.messageCallback = callback;
+
+    // Obsługa danych od hosta (kontroler)
+    handleDataFromHost(data) {
+        console.log('�� Dane od hosta:', data);
+        // Tu można dodać obsługę danych od hosta jeśli potrzebne
     }
-    
-    // Rejestracja callbacków dla połączenia
-    onConnection(callback) {
-        this.connectionCallback = callback;
-    }
-    
-    // Wysyłanie danych przez P2P
-    sendData(data) {
-        if (!this.dataChannel || this.dataChannel.readyState !== 'open') {
-            console.warn('⚠️ Próba wysłania danych przez P2P, ale kanał nie jest otwarty');
-            return false;
-        }
-        
-        try {
-            const jsonData = JSON.stringify(data);
-            this.dataChannel.send(jsonData);
-            return true;
-        } catch (error) {
-            console.error('⚠️ Błąd wysyłania danych P2P:', error);
-            return false;
+
+    // Callback gdy gracz się połączył
+    onPlayerConnected(playerId) {
+        console.log(`🎮 Gracz ${playerId} połączony przez P2P`);
+
+        // Wywołaj handlePlayerConnect z communication.js
+        if (window.gameComm && typeof window.gameComm.handlePlayerConnect === 'function') {
+            window.gameComm.handlePlayerConnect(playerId);
         }
     }
-    
-    // Generowanie danych połączenia (dla QR kodu)
-    generateConnectionData() {
-        if (!this.isHost || !this.peerConnection.localDescription) {
-            console.warn('⚠️ Nie można wygenerować danych połączenia - brak lokalnego opisu');
-            return null;
+
+    // Callback gdy gracz się rozłączył
+    onPlayerDisconnected(playerId) {
+        console.log(`❌ Gracz ${playerId} rozłączony`);
+
+        // Wywołaj odpowiednią funkcję z communication.js jeśli istnieje
+        if (window.gameComm && typeof window.gameComm.handlePlayerDisconnect === 'function') {
+            window.gameComm.handlePlayerDisconnect(playerId);
         }
-        
-        const connectionData = {
-            offer: this.peerConnection.localDescription,
-            candidates: this.pendingCandidates,
-            playerId: this.playerId,
-            timestamp: Date.now()
-        };
-        
-        console.log(`🔄 Wygenerowano dane połączenia P2P dla gracza ${this.playerId}`, connectionData);
-        
-        // Wywołanie callbacku z danymi połączenia (do QR)
-        if (this.connectionDataCallback) {
-            this.connectionDataCallback(connectionData);
-        }
-        
-        return connectionData;
     }
-    
-    // Rejestracja callbacku dla danych połączenia
-    onConnectionData(callback) {
-        this.connectionDataCallback = callback;
+
+    // Callback gdy połączenie się otwiera (kontroler)
+    onConnectionOpen() {
+        console.log('🎮 Kontroler połączony przez P2P');
+
+        // Aktualizuj interfejs kontrolera - sprawdź oba możliwe obiekty
+        if (window.gameComm) {
+            window.gameComm.p2pConnected = true;
+            window.gameComm.updateConnectionStatus();
+        }
+
+        if (window.gameCommunication) {
+            window.gameCommunication.p2pConnected = true;
+            window.gameCommunication.updateConnectionStatus();
+        }
     }
-    
-    // Zamknięcie połączenia
-    close() {
-        console.log('🔒 Zamykanie połączenia P2P');
-        
-        if (this.dataChannel) {
-            this.dataChannel.close();
+
+    // Callback gdy połączenie się zamyka (kontroler)
+    onConnectionClose() {
+        console.log('❌ Kontroler rozłączony');
+
+        // Aktualizuj interfejs kontrolera - sprawdź oba możliwe obiekty
+        if (window.gameComm) {
+            window.gameComm.p2pConnected = false;
+            window.gameComm.updateConnectionStatus();
         }
-        
-        if (this.peerConnection) {
-            this.peerConnection.close();
+
+        if (window.gameCommunication) {
+            window.gameCommunication.p2pConnected = false;
+            window.gameCommunication.updateConnectionStatus();
         }
-        
+    }
+
+    // Wyświetl ID hosta na ekranie
+    displayPeerID(peerId) {
+        // Zaktualizuj QR kody z nowym ID
+        this.updateQRCodes(peerId);
+
+        // Wyświetl ID na ekranie
+        const peerIdDisplay = document.getElementById('peerIdDisplay');
+        if (peerIdDisplay) {
+            peerIdDisplay.textContent = `Peer ID: ${peerId}`;
+        }
+    }
+
+    // Zaktualizuj QR kody z Peer ID
+    updateQRCodes(peerId) {
+        const baseUrl = `${window.location.protocol}//${window.location.host}/controller.html`;
+
+        // QR kod dla gracza 1
+        const player1Url = `${baseUrl}?player=player1&peerID=${peerId}`;
+        const qr1 = document.getElementById('qr1');
+        if (qr1 && window.QRCode) {
+            qr1.innerHTML = '';
+            new QRCode(qr1, {
+                text: player1Url,
+                width: 200,
+                height: 200
+            });
+        }
+
+        // QR kod dla gracza 2
+        const player2Url = `${baseUrl}?player=player2&peerID=${peerId}`;
+        const qr2 = document.getElementById('qr2');
+        if (qr2 && window.QRCode) {
+            qr2.innerHTML = '';
+            new QRCode(qr2, {
+                text: player2Url,
+                width: 200,
+                height: 200
+            });
+        }
+    }
+
+    // Zamknij wszystkie połączenia
+    disconnect() {
+        console.log('🔌 Zamykanie połączeń P2P');
+
+        if (this.connectionToHost) {
+            this.connectionToHost.close();
+            this.connectionToHost = null;
+        }
+
+        this.connections.forEach((conn) => {
+            conn.close();
+        });
+        this.connections.clear();
+
+        if (this.peer) {
+            this.peer.destroy();
+            this.peer = null;
+        }
+
         this.connected = false;
-        console.log('✅ Połączenie P2P zamknięte');
     }
-    
-    // Sprawdzenie czy połączenie jest aktywne
-    isConnected() {
-        return this.connected && this.peerConnection && this.peerConnection.connectionState === 'connected';
+
+    // Sprawdź czy gracz jest połączony
+    isPlayerConnected(playerId) {
+        return this.connections.has(playerId);
+    }
+
+    // Pobierz liczbę połączonych graczy
+    getConnectedPlayersCount() {
+        return this.connections.size;
     }
 }
 
-// Globalna instancja połączenia P2P
-const p2pConnection = {};
-
+// Globalna instancja P2P
+window.p2pConnection = new PeerToPeerConnection();
