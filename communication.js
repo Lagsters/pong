@@ -487,6 +487,44 @@ class GameCommunication {
             return;
         }
 
+        // Na iOS wymagana jest interakcja użytkownika przed aktywacją sensora
+        if (gyroscope.isIOS && typeof DeviceOrientationEvent.requestPermission === 'function') {
+            console.log('📱 iOS wykryty - wymagana interakcja użytkownika');
+            if (gyroStatus) {
+                gyroStatus.textContent = 'Dotknij ekranu aby aktywować żyroskop';
+                gyroStatus.style.color = '#ffc107';
+            }
+
+            // Dodaj handler dla aktywacji przez dotyk
+            const activateGyroscope = async () => {
+                try {
+                    console.log('👆 Użytkownik dotknął ekranu - inicjalizacja żyroskopu');
+                    await gyroscope.init();
+                    console.log('✅ Żyroskop zainicjalizowany po interakcji');
+                    if (gyroStatus) {
+                        gyroStatus.textContent = 'Żyroskop aktywny';
+                        gyroStatus.style.color = '#28a745';
+                    }
+                    this.startSendingData();
+                } catch (error) {
+                    console.error('❌ Błąd inicjalizacji żyroskopu po interakcji:', error);
+                    if (gyroStatus) {
+                        gyroStatus.textContent = `Błąd: ${error.message}`;
+                        gyroStatus.style.color = '#ff6b6b';
+                    }
+                }
+            };
+
+            // Usuń poprzednie handlery i dodaj nowe
+            document.removeEventListener('touchstart', activateGyroscope);
+            document.removeEventListener('click', activateGyroscope);
+            document.addEventListener('touchstart', activateGyroscope, { once: true });
+            document.addEventListener('click', activateGyroscope, { once: true });
+
+            return; // Czekamy na interakcję użytkownika
+        }
+
+        // Android i starsze iOS - próbuj bezpośredniej inicjalizacji
         gyroscope.init()
             .then(() => {
                 console.log('✅ Żyroskop zainicjalizowany');
@@ -503,19 +541,27 @@ class GameCommunication {
                     gyroStatus.style.color = '#ffc107';
                 }
 
-                // Dodaj obsługę dotknięcia ekranu dla aktywacji żyroskopu
-                document.addEventListener('touchstart', () => {
-                    gyroscope.init()
-                        .then(() => {
-                            console.log('✅ Żyroskop aktywowany po dotknięciu');
-                            if (gyroStatus) {
-                                gyroStatus.textContent = 'Żyroskop aktywny';
-                                gyroStatus.style.color = '#28a745';
-                            }
-                            this.startSendingData();
-                        })
-                        .catch(console.error);
-                }, { once: true });
+                // Fallback - dodaj obsługę dotknięcia ekranu
+                const fallbackActivate = async () => {
+                    try {
+                        await gyroscope.init();
+                        console.log('✅ Żyroskop aktywowany po dotknięciu (fallback)');
+                        if (gyroStatus) {
+                            gyroStatus.textContent = 'Żyroskop aktywny';
+                            gyroStatus.style.color = '#28a745';
+                        }
+                        this.startSendingData();
+                    } catch (retryError) {
+                        console.error('❌ Błąd ponownej próby:', retryError);
+                        if (gyroStatus) {
+                            gyroStatus.textContent = `Nie można aktywować: ${retryError.message}`;
+                            gyroStatus.style.color = '#ff6b6b';
+                        }
+                    }
+                };
+
+                document.addEventListener('touchstart', fallbackActivate, { once: true });
+                document.addEventListener('click', fallbackActivate, { once: true });
             });
     }
 

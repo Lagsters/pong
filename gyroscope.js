@@ -8,8 +8,14 @@ class GyroscopeController {
         this.isCalibrated = false;
         this.isListening = false;
         this.orientationHandler = null;
+        this.isIOS = this.detectIOS();
 
         this.checkSupport();
+    }
+
+    detectIOS() {
+        return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+               (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
     }
 
     checkSupport() {
@@ -39,25 +45,36 @@ class GyroscopeController {
             throw new Error('Żyroskop nie jest obsługiwany na tym urządzeniu');
         }
 
-        // Dla iOS 13+ wymagane jest uprawnienie
+        // Dla iOS 13+ wymagane jest uprawnienie i interakcja użytkownika
         if (typeof DeviceOrientationEvent.requestPermission === 'function') {
             try {
+                console.log('📱 iOS wykryty - żądanie uprawnień DeviceOrientationEvent');
                 const permission = await DeviceOrientationEvent.requestPermission();
                 this.isPermissionGranted = permission === 'granted';
 
                 if (!this.isPermissionGranted) {
-                    throw new Error('Brak uprawnień do żyroskopu');
+                    throw new Error(`Brak uprawnień do żyroskopu: ${permission}`);
                 }
 
-                console.log('✅ Uprawnienia do żyroskopu uzyskane');
+                console.log('✅ Uprawnienia DeviceOrientationEvent uzyskane');
+
+                // Sprawdź również DeviceMotionEvent dla iOS
+                if (typeof DeviceMotionEvent.requestPermission === 'function') {
+                    try {
+                        await DeviceMotionEvent.requestPermission();
+                        console.log('✅ Uprawnienia DeviceMotionEvent również uzyskane');
+                    } catch (motionError) {
+                        console.log('⚠️ DeviceMotionEvent nie jest dostępny, ale DeviceOrientation działa');
+                    }
+                }
             } catch (error) {
-                console.error('❌ Bł��d uprawnień żyroskopu:', error);
-                throw new Error('Nie udało się uzyskać uprawnień do żyroskopu');
+                console.error('❌ Błąd uprawnień żyroskopu:', error);
+                throw new Error(`Nie udało się uzyskać uprawnień do żyroskopu: ${error.message}`);
             }
         } else {
             // Android i starsze wersje iOS
             this.isPermissionGranted = true;
-            console.log('✅ Uprawnienia do żyroskopu (automatyczne)');
+            console.log('✅ Uprawnienia do żyroskopu (automatyczne - Android/starszy iOS)');
         }
 
         return this.isPermissionGranted;
